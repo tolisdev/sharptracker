@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+<<<<<<< HEAD
 import os
 import io
 from datetime import date
@@ -9,6 +10,15 @@ from datetime import date
 st.set_page_config(page_title="SharpTracker Pro", layout="wide", page_icon="📈")
 
 # Password logic: Checks Streamlit Cloud secrets first, then defaults to "admin"
+=======
+from streamlit_gsheets import GSheetsConnection
+from datetime import date
+
+# --- 1. CONFIG & AUTH ---
+st.set_page_config(page_title="SharpTracker Cloud", layout="wide", page_icon="📈")
+
+# Password logic
+>>>>>>> 643a86e (v1.6)
 PASSWORD_SECRET = st.secrets.get("APP_PASSWORD", "admin")
 
 if "authenticated" not in st.session_state:
@@ -25,19 +35,20 @@ if not st.session_state["authenticated"]:
             st.error("Invalid Password")
     st.stop()
 
+<<<<<<< HEAD
 # --- 2. DATA ENGINES ---
 DB_FILE = "bet_data.csv"
 CASH_FILE = "cash_log.csv"
 META_FILE = "meta_config.csv"
+=======
+# --- 2. CLOUD CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+>>>>>>> 643a86e (v1.6)
 
-def load_data(file, columns):
-    if os.path.exists(file):
-        df = pd.read_csv(file)
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date']).dt.date
-        return df
-    return pd.DataFrame(columns=columns)
+def load_sheet(name):
+    return conn.read(worksheet=name, ttl="0s")
 
+<<<<<<< HEAD
 def load_meta():
     if os.path.exists(META_FILE):
         return pd.read_csv(META_FILE).to_dict('list')
@@ -126,10 +137,76 @@ if nav == "📊 Dashboard":
         g2.plotly_chart(px.pie(dff, values='Stake', names='Bookie', title="Stake by Bookie"), use_container_width=True)
 
 # --- 5. MANAGE BETS PAGE ---
+=======
+def save_sheet(df, name):
+    conn.update(worksheet=name, data=df)
+    st.cache_data.clear()
+
+# Load Data
+df_bets = load_sheet("Bets")
+df_cash = load_sheet("Cash")
+df_meta = load_sheet("Meta")
+
+# Data Formatting for UI
+for df in [df_bets, df_cash]:
+    if not df.empty and 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date']).dt.date
+
+# --- 3. SIDEBAR ---
+st.sidebar.title("🎯 SharpTracker")
+nav = st.sidebar.radio("Navigation", ["📊 Dashboard", "📝 Manage Bets", "💰 Bankroll", "⚙️ Settings"])
+
+if not df_bets.empty:
+    risk = df_bets[df_bets['Status'] == "Pending"]['Stake'].sum()
+    st.sidebar.metric("Money at Risk", f"${risk:,.2f}")
+    st.sidebar.metric("Total P/L", f"${df_bets['P/L'].sum():,.2f}")
+
+# --- 4. DASHBOARD PAGE ---
+if nav == "📊 Dashboard":
+    st.header("📈 Cloud Analytics")
+    if df_bets.empty:
+        st.info("No data found. Sync your first bet in 'Manage Bets'!")
+    else:
+        with st.expander("🔍 Advanced Filters", expanded=True):
+            c1, c2, c3, c4 = st.columns(4)
+            f_sport = c1.multiselect("Sport", df_bets['Sport'].unique())
+            f_league = c2.multiselect("League", df_bets['League'].unique())
+            f_bookie = c3.multiselect("Bookie", df_bets['Bookie'].unique())
+            f_res = c4.multiselect("Status", df_bets['Status'].unique())
+
+        dff = df_bets.copy()
+        if f_sport: dff = dff[dff['Sport'].isin(f_sport)]
+        if f_league: dff = dff[dff['League'].isin(f_league)]
+        if f_bookie: dff = dff[dff['Bookie'].isin(f_bookie)]
+        if f_res: dff = dff[dff['Status'].isin(f_res)]
+
+        # KPI Row
+        st.divider()
+        m1, m2, m3, m4 = st.columns(4)
+        profit = dff['P/L'].sum()
+        roi = (profit / dff['Stake'].sum() * 100) if dff['Stake'].sum() > 0 else 0
+        m1.metric("Profit", f"${profit:,.2f}")
+        m2.metric("ROI", f"{roi:.2f}%")
+        m3.metric("Bets Count", len(dff))
+        m4.metric("Avg Odds", f"{dff['Odds'].mean():.2f}" if not dff.empty else "0.00")
+
+        # Visuals
+        st.divider()
+        df_s = dff.sort_values("Date")
+        df_s['Cum'] = df_s['P/L'].cumsum()
+        st.plotly_chart(px.area(df_s, x="Date", y="Cum", title="Equity Curve (Cloud Data)", template="plotly_dark"), use_container_width=True)
+
+        ca, cb = st.columns(2)
+        ca.plotly_chart(px.bar(dff.groupby("Sport")['P/L'].sum().reset_index(), x='Sport', y='P/L', title="Profit by Sport"))
+        cb.plotly_chart(px.pie(dff, values='Stake', names='Status', title="Bet Outcome Split"))
+
+# --- 5. MANAGE BETS PAGE (WITH CASHOUT) ---
+>>>>>>> 643a86e (v1.6)
 elif nav == "📝 Manage Bets":
     st.header("📝 Wager Management")
 
     with st.expander("➕ Log New Bet"):
+<<<<<<< HEAD
         with st.form("new_bet"):
             c1, c2, c3 = st.columns(3)
             d_in = c1.date_input("Date", date.today())
@@ -208,3 +285,93 @@ elif nav == "⚙️ Settings":
     if st.button("Save Settings"):
         save_meta(new_meta)
         st.success("Updated!")
+=======
+        with st.form("new_bet_form"):
+            c1, c2, c3 = st.columns(3)
+            d_i = c1.date_input("Date", date.today())
+            s_i = c1.selectbox("Sport", df_meta["Sports"])
+            l_i = c1.selectbox("League", df_meta["Leagues"])
+            b_i = c2.selectbox("Bookie", df_meta["Bookies"])
+            t_i = c2.selectbox("Type", df_meta["Types"])
+            e_i = c2.text_input("Event Details")
+            o_i = c3.number_input("Odds", 1.01, 100.0, 1.91)
+            st_i = c3.number_input("Stake", 0.0, 50000.0, 10.0)
+            res_i = c3.selectbox("Status", ["Pending", "Won", "Lost", "Push", "Cashed Out"])
+
+            if st.form_submit_button("Sync Wager"):
+                pl = 0.0
+                if res_i == "Won": pl = (st_i * o_i) - st_i
+                elif res_i == "Lost": pl = -st_i
+
+                new_id = df_bets['id'].max() + 1 if not df_bets.empty else 1
+                new_row = pd.DataFrame([[new_id, d_i, s_i, l_i, b_i, t_i, e_i, o_i, st_i, res_i, pl, 0.0]], columns=df_bets.columns)
+                save_sheet(pd.concat([df_bets, new_row]), "Bets")
+                st.rerun()
+
+    # --- SETTLEMENT & CASHOUT LOGIC ---
+    pending = df_bets[df_bets['Status'] == "Pending"]
+    if not pending.empty:
+        st.subheader("🔔 Open Wagers")
+        for idx, row in pending.iterrows():
+            with st.container(border=True):
+                col1, col2, col3 = st.columns([3, 2, 1])
+                col1.write(f"**{row['Event']}** | {row['Bookie']} | ${row['Stake']}")
+
+                res = col2.selectbox("Action", ["Pending", "Won", "Lost", "Push", "Cashed Out"], key=f"res_{row['id']}")
+
+                cash_amt = 0.0
+                if res == "Cashed Out":
+                    cash_amt = col3.number_input("Payout ($)", min_value=0.0, key=f"co_{row['id']}")
+
+                if res != "Pending":
+                    if st.button("Update Cloud", key=f"btn_{row['id']}"):
+                        df_bets.at[idx, 'Status'] = res
+                        if res == "Won": df_bets.at[idx, 'P/L'] = (row['Stake'] * row['Odds']) - row['Stake']
+                        elif res == "Lost": df_bets.at[idx, 'P/L'] = -row['Stake']
+                        elif res == "Cashed Out":
+                            df_bets.at[idx, 'P/L'] = cash_amt - row['Stake']
+                            df_bets.at[idx, 'Cashout_Amt'] = cash_amt
+                        else: df_bets.at[idx, 'P/L'] = 0.0
+
+                        save_sheet(df_bets, "Bets")
+                        st.rerun()
+
+    st.divider()
+    for idx, row in df_bets.sort_values("Date", ascending=False).iterrows():
+        with st.expander(f"{row['Date']} | {row['Event']} ({row['Status']})"):
+            if st.button("Delete Permanent", key=f"del_{row['id']}"):
+                save_sheet(df_bets.drop(idx), "Bets")
+                st.rerun()
+
+# --- 6. BANKROLL PAGE ---
+elif nav == "💰 Bankroll":
+    st.header("💰 Bankroll Management")
+    with st.form("cash_move"):
+        c1, c2, c3 = st.columns(3)
+        ct = c2.selectbox("Transaction", ["Deposit", "Withdrawal", "Bonus"])
+        ca = c3.number_input("Amount ($)", 0.0)
+        if st.form_submit_button("Sync Cash"):
+            final_a = -ca if ct == "Withdrawal" else ca
+            new_c = pd.DataFrame([[date.today(), c1.selectbox("Source", df_meta["Bookies"]), ct, final_a]], columns=df_cash.columns)
+            save_sheet(pd.concat([df_cash, new_c]), "Cash")
+            st.rerun()
+
+    summary = []
+    for b in [x for x in df_meta["Bookies"] if str(x) != 'nan']:
+        cash = df_cash[df_cash['Bookie'] == b]['Amount'].sum()
+        profit = df_bets[df_bets['Bookie'] == b]['P/L'].sum()
+        at_risk = df_bets[(df_bets['Bookie'] == b) & (df_bets['Status'] == "Pending")]['Stake'].sum()
+        summary.append({"Bookie": b, "Total Cash In": cash, "Profit": profit, "Balance": cash + profit - at_risk})
+    st.table(pd.DataFrame(summary))
+
+# --- 7. SETTINGS PAGE ---
+elif nav == "⚙️ Settings":
+    st.header("⚙️ System Config")
+    new_m = {}
+    for cat in df_meta.columns:
+        cur = [str(x) for x in df_meta[cat].tolist() if str(x) != 'nan']
+        new_m[cat] = st.text_area(f"Edit {cat}", value="\n".join(cur), height=200).split("\n")
+    if st.button("Overwrite Cloud Settings"):
+        save_sheet(pd.DataFrame.from_dict(new_m, orient='index').transpose(), "Meta")
+        st.success("Synced!")
+>>>>>>> 643a86e (v1.6)
