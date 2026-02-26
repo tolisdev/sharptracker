@@ -5,519 +5,269 @@ import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 from datetime import date, datetime
 
-# --- 1. PURE UI & SYSTEM STYLING ---
-st.set_page_config(page_title="SharpTracker", layout="wide", page_icon="🎯")
+# --- 1. SYSTEM UI & BRANDING ---
+st.set_page_config(page_title="SharpTracker Elite", layout="wide", page_icon="🎯")
 
-# Explicit CSS Injection for Professional UI
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-
-    /* Metric Card Styling */
-    [data-testid="stMetricValue"] {
-        font-size: 32px;
-        font-weight: 800;
-        color: #00ffc8;
-        letter-spacing: -0.5px;
-    }
-
-    [data-testid="stMetricLabel"] {
-        font-size: 14px;
-        color: #8b949e;
-        font-weight: 600;
-    }
-
-    /* Professional Containers */
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    [data-testid="stMetricValue"] { font-size: 32px; font-weight: 800; color: #00ffc8; letter-spacing: -0.5px; }
+    [data-testid="stMetricLabel"] { font-size: 14px; color: #8b949e; font-weight: 600; text-transform: uppercase; }
     div[data-testid="stVerticalBlock"] > div:has(div.stMetric) {
-        background-color: #161b22;
-        border: 1px solid #30333d;
-        padding: 24px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        background-color: #161b22; border: 1px solid #30333d; padding: 24px; border-radius: 12px;
     }
-
-    /* Sidebar Refinement */
-    .sidebar-footer {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        font-size: 11px;
-        color: #484f58;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1.2px;
-    }
-
-    /* Streak Visualizer */
-    .streak-card {
-        background: #161b22;
-        border: 1px solid #30333d;
-        padding: 22px;
-        border-radius: 12px;
-        text-align: center;
-        min-height: 100px;
-    }
-
-    /* Table & Dataframe UI */
-    .stDataFrame {
-        border: 1px solid #30333d;
-        border-radius: 8px;
-    }
-
-    /* Form Buttons */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 600;
-        height: 3.2em;
-        transition: all 0.2s ease;
-    }
+    .sidebar-footer { position: fixed; bottom: 20px; left: 20px; font-size: 11px; color: #484f58; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; }
+    .streak-card { background: #161b22; border: 1px solid #30333d; padding: 22px; border-radius: 12px; text-align: center; }
+    .stButton>button { border-radius: 8px; font-weight: 600; height: 3.2em; transition: all 0.2s ease; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MULTI-LEVEL AUTHENTICATION ---
+# --- 2. MULTI-USER AUTHENTICATION ---
 if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+    st.session_state.authenticated = False
+    st.session_state.username = None
 
-if not st.session_state["authenticated"]:
+if not st.session_state.authenticated:
     st.title("🎯 SharpTracker Elite")
-    st.markdown("### Secure Access Required")
-
+    st.markdown("### Secure System Access")
     with st.container(border=True):
-        auth_col1, auth_col2 = st.columns([2, 1])
-        with auth_col1:
-            pwd_input = st.text_input("Enter System Access Key", type="password")
-        with auth_col2:
-            st.write("##")
-            if st.button("Unlock System", use_container_width=True):
-                if pwd_input == st.secrets.get("APP_PASSWORD", "admin"):
-                    st.session_state["authenticated"] = True
-                    st.rerun()
-                else:
-                    st.error("Invalid Key")
+        u_in = st.text_input("Username", placeholder="Your ID")
+        p_in = st.text_input("Password", type="password", placeholder="••••••••")
+        if st.button("Unlock Environment", use_container_width=True):
+            user_db = st.secrets.get("users", {})
+            if u_in in user_db and p_in == user_db[u_in]:
+                st.session_state.authenticated = True
+                st.session_state.username = u_in
+                st.rerun()
+            else:
+                st.error("Invalid Credentials.")
     st.stop()
 
-# --- 3. THE DATA ENGINE (Explicit RAM Mapping) ---
+# --- 3. DYNAMIC DATA ENGINE (User Isolation) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
+user = st.session_state.username
+
+# USER-SPECIFIC TAB ROUTING
+BETS_TAB = f"bets_{user}"
+CASH_TAB = f"cash_{user}"
+META_TAB = f"meta_{user}"
 
 if "unsaved_count" not in st.session_state:
     st.session_state.unsaved_count = 0
 if "last_sync" not in st.session_state:
     st.session_state.last_sync = "Never"
 
-# Initial Fetch Logic (Explicit Load)
+# Initial Fetch & Auto-Creation
 if "bets_df" not in st.session_state:
     try:
-        # Pull Raw Dataframes
-        raw_bets = conn.read(worksheet="Bets", ttl="0s")
-        raw_cash = conn.read(worksheet="Cash", ttl="0s")
-        raw_meta = conn.read(worksheet="Meta", ttl="0s")
+        # Load or Build User Tabs
+        def safe_load(tab_name, columns):
+            try:
+                df = conn.read(worksheet=tab_name, ttl="0s")
+                for col in columns:
+                    if col not in df.columns:
+                        df[col] = 0.0 if col in ["id", "Odds", "Stake", "P/L", "Cashout_Amt"] else ""
+                return df
+            except:
+                df = pd.DataFrame(columns=columns)
+                conn.update(worksheet=tab_name, data=df)
+                return df
 
-        # SELF-HEALING & SCHEMA ENFORCEMENT
-        # This prevents KeyErrors if columns are missing in the sheet
-        required_bet_fields = [
-            "id", "Date", "Sport", "League", "Bookie",
-            "Type", "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt"
-        ]
-        for field in required_bet_fields:
-            if field not in raw_bets.columns:
-                if field in ["id", "Odds", "Stake", "P/L", "Cashout_Amt"]:
-                    raw_bets[field] = 0.0
-                else:
-                    raw_bets[field] = "N/A"
+        b_df = safe_load(BETS_TAB, ["id", "Date", "Sport", "League", "Bookie", "Type", "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt"])
+        c_df = safe_load(CASH_TAB, ["Date", "Bookie", "Type", "Amount"])
+        m_df = safe_load(META_TAB, ["Sports", "Leagues", "Bookies", "Types"])
 
-        required_meta_fields = ["Sports", "Leagues", "Bookies", "Types"]
-        for field in required_meta_fields:
-            if field not in raw_meta.columns:
-                raw_meta[field] = ""
+        # Sanitize Dates
+        if not b_df.empty: b_df['Date'] = pd.to_datetime(b_df['Date']).dt.date
+        if not c_df.empty: c_df['Date'] = pd.to_datetime(c_df['Date']).dt.date
 
-        # Date Sanitization
-        if not raw_bets.empty:
-            raw_bets['Date'] = pd.to_datetime(raw_bets['Date']).dt.date
-        if not raw_cash.empty:
-            raw_cash['Date'] = pd.to_datetime(raw_cash['Date']).dt.date
-
-        # Commit to Session RAM
-        st.session_state.bets_df = raw_bets
-        st.session_state.cash_df = raw_cash
-        st.session_state.meta_df = raw_meta
-        st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
-
+        st.session_state.bets_df = b_df
+        st.session_state.cash_df = c_df
+        st.session_state.meta_df = m_df
+        st.session_state.last_sync = datetime.now().strftime("%H:%M")
     except Exception as e:
-        st.error(f"FATAL SYNC ERROR: {e}")
-        st.info("Check your Google Sheet tab names: 'Bets', 'Cash', 'Meta'")
-        st.stop()
+        st.error(f"Routing Error: {e}"); st.stop()
 
-# Short-hand variables for readability
 df_bets = st.session_state.bets_df
 df_cash = st.session_state.cash_df
 df_meta = st.session_state.meta_df
 
-# --- 4. ADVANCED ANALYTICS LOGIC ---
-def calculate_streak_intelligence(df):
-    """Explicitly calculates the current win/loss momentum"""
-    if df.empty:
-        return "N/A", "#8b949e"
+# --- 4. ANALYTICS LOGIC ---
+def get_streak_stats(df):
+    if df.empty: return "N/A", "#8b949e"
+    graded = df[df['Status'].isin(['Won', 'Lost'])].sort_values(['Date', 'id'], ascending=False)
+    if graded.empty: return "0-0", "#8b949e"
+    res = graded['Status'].tolist()
+    curr, count = res[0], 0
+    for r in res:
+        if r == curr: count += 1
+        else: break
+    return f"{count} {curr}", ("#00ffc8" if curr == "Won" else "#ff4b4b")
 
-    # Filter for settled bets (Won/Lost)
-    settled = df[df['Status'].isin(['Won', 'Lost'])]
-    if settled.empty:
-        return "0-0", "#8b949e"
-
-    # Sort by Date descending, then ID descending
-    settled = settled.sort_values(['Date', 'id'], ascending=[False, False])
-    results_list = settled['Status'].tolist()
-
-    first_result = results_list[0]
-    streak_counter = 0
-
-    for r in results_list:
-        if r == first_result:
-            streak_counter += 1
-        else:
-            break
-
-    streak_color = "#00ffc8" if first_result == "Won" else "#ff4b4b"
-    return f"{streak_counter} {first_result}", streak_color
-
-# --- 5. SIDEBAR NAVIGATION & SYNC STATUS ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
-    st.title("🎯 SharpTracker")
-    st.caption(f"Status: Connected | Sync: {st.session_state.last_sync}")
+    st.subheader(f"🎯 SharpTracker: {user.upper()}")
+    st.caption(f"Status: Synchronized | Sync: {st.session_state.last_sync}")
 
-    st.divider()
-
-    # Navigation Radio
-    nav_choice = st.radio(
-        "Navigation",
-        ["Dashboard", "Wagers", "Bankroll", "Settings"],
-        label_visibility="collapsed"
-    )
-
-    st.divider()
-
-    # Explicit Sync Controls
     if st.session_state.unsaved_count > 0:
-        st.warning(f"**{st.session_state.unsaved_count} PENDING CHANGES**")
+        st.warning(f"**{st.session_state.unsaved_count} Unsaved Changes**")
         if st.button("💾 PUSH TO CLOUD", type="primary", use_container_width=True):
-            with st.spinner("Writing to Google..."):
-                try:
-                    conn.update(worksheet="Bets", data=st.session_state.bets_df)
-                    conn.update(worksheet="Cash", data=st.session_state.cash_df)
-                    conn.update(worksheet="Meta", data=st.session_state.meta_df)
-                    st.session_state.unsaved_count = 0
-                    st.session_state.last_sync = datetime.now().strftime("%H:%M:%S")
-                    st.success("Cloud Updated")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Write Failed: {e}")
-    else:
-        st.success("✅ Cloud Synchronized")
-        if st.button("🔄 Full Data Refresh", use_container_width=True):
-            for key in ["bets_df", "cash_df", "meta_df", "unsaved_count"]:
-                if key in st.session_state:
-                    del st.session_state[key]
+            conn.update(worksheet=BETS_TAB, data=st.session_state.bets_df)
+            conn.update(worksheet=CASH_TAB, data=st.session_state.cash_df)
+            conn.update(worksheet=META_TAB, data=st.session_state.meta_df)
+            st.session_state.unsaved_count = 0
+            st.session_state.last_sync = datetime.now().strftime("%H:%M")
             st.rerun()
 
-    # Studio Branding
+    if st.button("🚪 Logout", use_container_width=True):
+        for key in list(st.session_state.keys()): del st.session_state[key]
+        st.rerun()
+
+    st.divider()
+    nav = st.radio("Navigation", ["Dashboard", "Wagers", "Bankroll", "Settings"], label_visibility="collapsed")
     st.markdown('<div class="sidebar-footer">Made by Akenza Web Studio</div>', unsafe_allow_html=True)
 
-# --- 6. DASHBOARD (Deep Visualization) ---
-if nav_choice == "Dashboard":
-    st.title("Dashboard")
+# --- 6. DASHBOARD ---
+if nav == "Dashboard":
+    st.title("Performance Intelligence")
+    with st.expander("🔍 Filter Global Analytics", expanded=False):
+        f_c1, f_c2, f_c3 = st.columns(3)
+        f_bookie = f_c1.multiselect("Bookie", df_bets['Bookie'].unique())
+        f_type = f_c2.multiselect("Bet Type", df_bets['Type'].unique())
+        f_sport = f_c3.multiselect("Sport", df_bets['Sport'].unique())
 
-    # INLINE FILTERS (Explicit Placement)
-    with st.expander("🔍 GLOBAL ANALYTICS FILTERS", expanded=False):
-        f_col1, f_col2, f_col3, f_col4 = st.columns(4)
-
-        # Explicit List Extraction
-        all_bookies = df_bets['Bookie'].unique().tolist()
-        all_types = df_bets['Type'].unique().tolist()
-        all_sports = df_bets['Sport'].unique().tolist()
-        all_leagues = df_bets['League'].unique().tolist()
-
-        sel_bookies = f_col1.multiselect("Bookie", all_bookies)
-        sel_types = f_col2.multiselect("Bet Type", all_types)
-        sel_sports = f_col3.multiselect("Sport", all_sports)
-        sel_leagues = f_col4.multiselect("League", all_leagues)
-
-    # Filter Application
     dff = df_bets.copy()
-    if sel_bookies: dff = dff[dff['Bookie'].isin(sel_bookies)]
-    if sel_types: dff = dff[dff['Type'].isin(sel_types)]
-    if sel_sports: dff = dff[dff['Sport'].isin(sel_sports)]
-    if sel_leagues: dff = dff[dff['League'].isin(sel_leagues)]
+    if f_bookie: dff = dff[dff['Bookie'].isin(f_bookie)]
+    if f_type: dff = dff[dff['Type'].isin(f_type)]
+    if f_sport: dff = dff[dff['Sport'].isin(f_sport)]
 
     if dff.empty:
-        st.info("No data entries found matching your filter selection.")
+        st.info("Log your first bet in the 'Wagers' hub to activate analytics.")
     else:
-        # TOP ROW: METRICS GRID
-        # Explicit calculations to avoid pandas errors
-        numeric_pl = pd.to_numeric(dff['P/L'], errors='coerce').fillna(0)
-        numeric_stake = pd.to_numeric(dff['Stake'], errors='coerce').fillna(0)
+        # KPI Bar
+        p_val = pd.to_numeric(dff['P/L']).sum()
+        r_val = pd.to_numeric(dff[dff['Status'] == "Pending"]['Stake']).sum()
+        s_text, s_color = get_streak_stats(dff)
 
-        total_p_l = numeric_pl.sum()
-        total_risk = numeric_stake[dff['Status'] == "Pending"].sum()
-        roi_calc = (total_p_l / numeric_stake.sum() * 100) if numeric_stake.sum() > 0 else 0
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Net Profit", f"${p_val:,.2f}")
+        m2.metric("Open Risk", f"${r_val:,.2f}")
+        m3.metric("Total Bets", len(dff))
+        with m4:
+            st.markdown(f'<div class="streak-card"><span style="color:#8b949e;font-size:11px;font-weight:600;">STREAK</span><br><span style="color:{s_color};font-size:24px;font-weight:800;">{s_text}</span></div>', unsafe_allow_html=True)
 
-        streak_label, streak_hex = calculate_streak_intelligence(dff)
-
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        m_col1.metric("Net Profit", f"${total_p_l:,.2f}", delta=f"{roi_calc:.1f}% ROI")
-        m_col2.metric("Active Exposure", f"${total_risk:,.2f}")
-        m_col3.metric("Total Volume", f"${numeric_stake.sum():,.2f}")
-        with m_col4:
-            st.markdown(f'''
-                <div class="streak-card">
-                    <span style="color:#8b949e; font-size:12px; font-weight:700; text-transform:uppercase;">Current Momentum</span><br>
-                    <span style="color:{streak_hex}; font-size:26px; font-weight:800;">{streak_label}</span>
-                </div>
-            ''', unsafe_allow_html=True)
-
-        # MAIN PERFORMANCE CHART (Explicit go.Figure)
+        # Growth Graph
         st.divider()
-        chart_df = dff.sort_values('Date')
-        chart_df['Cumulative_Profit'] = chart_df['P/L'].cumsum()
+        dff_s = dff.sort_values('Date')
+        dff_s['Cumulative'] = dff_s['P/L'].cumsum()
+        fig = go.Figure(go.Scatter(x=dff_s['Date'], y=dff_s['Cumulative'], fill='tozeroy', line_color='#00ffc8', line_width=3))
+        fig.update_layout(template="plotly_dark", title="Profit Growth Over Time", height=450, margin=dict(l=10, r=10, t=50, b=10))
+        st.plotly_chart(fig, use_container_width=True)
 
-        fig_main = go.Figure()
-        fig_main.add_trace(go.Scatter(
-            x=chart_df['Date'],
-            y=chart_df['Cumulative_Profit'],
-            mode='lines',
-            fill='tozeroy',
-            line=dict(color='#00ffc8', width=3),
-            fillcolor='rgba(0, 255, 200, 0.1)',
-            name="P/L Growth"
-        ))
-        fig_main.update_layout(
-            template="plotly_dark",
-            title="Equity Growth (Selected Session)",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(showgrid=False),
-            yaxis=dict(gridcolor='#30333d'),
-            height=450
-        )
-        st.plotly_chart(fig_main, use_container_width=True)
-
-        # COMPARATIVE ANALYTICS GRID
+        # Comparative Analytics
         st.divider()
-        g_col1, g_col2, g_col3 = st.columns(3)
+        g1, g2, g3 = st.columns(3)
+        g1.plotly_chart(px.bar(dff.groupby("Sport")['P/L'].sum().reset_index(), x='Sport', y='P/L', title="P/L by Sport", template="plotly_dark", color_discrete_sequence=['#00ffc8']), use_container_width=True)
+        g2.plotly_chart(px.pie(dff, values='Stake', names='Bookie', hole=.4, title="Volume by Bookie", template="plotly_dark"), use_container_width=True)
+        g3.plotly_chart(px.bar(dff.groupby("Type")['P/L'].sum().reset_index(), x='Type', y='P/L', title="P/L by Type", template="plotly_dark", color_discrete_sequence=['#ff4b4b']), use_container_width=True)
 
-        # Profit by Sport (Explicit Bar)
-        sport_p = dff.groupby("Sport")['P/L'].sum().reset_index()
-        g_col1.plotly_chart(px.bar(
-            sport_p, x='Sport', y='P/L',
-            title="P/L by Category", template="plotly_dark",
-            color_discrete_sequence=['#00ffc8']
-        ), use_container_width=True)
+# --- 7. WAGERS ---
+elif nav == "Wagers":
+    st.title(f"Wager Management: {user}")
+    t_add, t_pend, t_hist = st.tabs(["Add Bet", "Settlement", "History & Delete"])
 
-        # Volume by Bookie (Explicit Pie)
-        bookie_v = dff.groupby("Bookie")['Stake'].sum().reset_index()
-        g_col2.plotly_chart(px.pie(
-            bookie_v, values='Stake', names='Bookie',
-            hole=.4, title="Volume by Source", template="plotly_dark"
-        ), use_container_width=True)
+    with t_add:
+        with st.form("add_w_f", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            s_l, l_l, b_l, t_l = [df_meta[c].dropna().tolist() for c in ["Sports", "Leagues", "Bookies", "Types"]]
 
-        # Profit by Bet Type (Explicit Bar)
-        type_p = dff.groupby("Type")['P/L'].sum().reset_index()
-        g_col3.plotly_chart(px.bar(
-            type_p, x='Type', y='P/L',
-            title="P/L by Wager Type", template="plotly_dark",
-            color_discrete_sequence=['#ff4b4b']
-        ), use_container_width=True)
+            w_d = c1.date_input("Date", date.today())
+            w_s = c1.selectbox("Sport", s_l)
+            w_l = c1.selectbox("League", l_l)
+            w_b = c2.selectbox("Bookie", b_l)
+            w_t = c2.selectbox("Type", t_l)
+            w_e = c2.text_input("Selection/Event")
+            w_o = c3.number_input("Decimal Odds", 1.01, 1000.0, 1.91)
+            w_st = c3.number_input("Stake", 1.0, 100000.0, 10.0)
+            w_res = c3.selectbox("Status", ["Pending", "Won", "Lost", "Push", "Cashed Out"])
 
-# --- 7. WAGERS PAGE (Explicit Settlement & History) ---
-elif nav_choice == "Wagers":
-    st.title("Wager Hub")
-    tab_new, tab_open, tab_history = st.tabs(["➕ LOG NEW WAGER", "🔔 PENDING SETTLEMENT", "📚 SEARCHABLE HISTORY"])
+            if st.form_submit_button("Log Locally"):
+                pl = (w_st * w_o - w_st) if w_res == "Won" else (-w_st if w_res == "Lost" else 0.0)
+                nid = int(df_bets['id'].max() + 1) if not df_bets.empty else 1
+                new_row = pd.DataFrame([[nid, w_d, w_s, w_l, w_b, w_t, w_e, w_o, w_st, w_res, pl, 0.0]], columns=df_bets.columns)
+                st.session_state.bets_df = pd.concat([df_bets, new_row], ignore_index=True)
+                st.session_state.unsaved_count += 1; st.rerun()
 
-    with tab_new:
-        with st.form("wager_submission_form", clear_on_submit=True):
-            w_c1, w_c2, w_c3 = st.columns(3)
+    with t_pend:
+        pending = df_bets[df_bets['Status'] == "Pending"]
+        if pending.empty: st.success("No active exposure.")
+        for idx, row in pending.iterrows():
+            with st.container(border=True):
+                pc1, pc2, pc3 = st.columns([3, 2, 1])
+                pc1.write(f"**{row['Event']}** | ${row['Stake']}")
+                res = pc2.selectbox("Result", ["Pending", "Won", "Lost", "Push", "Cashed Out"], key=f"r_{row['id']}")
+                if res != "Pending":
+                    co = st.number_input("Payout", key=f"c_{row['id']}") if res == "Cashed Out" else 0.0
+                    if st.button("Set Result", key=f"b_{row['id']}"):
+                        st.session_state.bets_df.at[idx, 'Status'] = res
+                        st.session_state.bets_df.at[idx, 'P/L'] = (row['Stake']*row['Odds']-row['Stake']) if res=="Won" else (-row['Stake'] if res=="Lost" else co-row['Stake'])
+                        st.session_state.unsaved_count += 1; st.rerun()
 
-            # Explicit List Fetching from Meta
-            sports_options = df_meta["Sports"].dropna().tolist()
-            leagues_options = df_meta["Leagues"].dropna().tolist()
-            bookies_options = df_meta["Bookies"].dropna().tolist()
-            types_options = df_meta["Types"].dropna().tolist()
-
-            # Form Inputs
-            in_date = w_c1.date_input("Date of Wager", date.today())
-            in_sport = w_c1.selectbox("Select Sport", sports_options)
-            in_league = w_c1.selectbox("Select League", leagues_options)
-
-            in_bookie = w_c2.selectbox("Select Bookie", bookies_options)
-            in_type = w_c2.selectbox("Select Wager Type", types_options)
-            in_event = w_c2.text_input("Selection Name (e.g. Celtics -4.5)")
-
-            in_odds = w_c3.number_input("Decimal Odds", 1.01, 1000.0, 1.91)
-            in_stake = w_c3.number_input("Stake Amount ($)", 1.0, 1000000.0, 10.0)
-            in_status = w_c3.selectbox("Status", ["Pending", "Won", "Lost", "Push", "Cashed Out"])
-
-            if st.form_submit_button("SAVE TO LOCAL SESSION"):
-                # Explicit P/L Calculation
-                if in_status == "Won":
-                    p_l_final = (in_stake * in_odds) - in_stake
-                elif in_status == "Lost":
-                    p_l_final = -in_stake
-                else:
-                    p_l_final = 0.0
-
-                # ID Assignment
-                new_wager_id = int(df_bets['id'].max() + 1) if not df_bets.empty else 1
-
-                new_entry = pd.DataFrame([[
-                    new_wager_id, in_date, in_sport, in_league, in_bookie,
-                    in_type, in_event, in_odds, in_stake, in_status, p_l_final, 0.0
-                ]], columns=df_bets.columns)
-
-                st.session_state.bets_df = pd.concat([df_bets, new_entry], ignore_index=True)
-                st.session_state.unsaved_count += 1
-                st.rerun()
-
-    with tab_open:
-        pending_items = df_bets[df_bets['Status'] == "Pending"]
-        if pending_items.empty:
-            st.success("All wagers have been settled.")
-        else:
-            for idx, row in pending_items.iterrows():
-                with st.container(border=True):
-                    s_c1, s_c2, s_c3 = st.columns([3, 2, 1])
-                    s_c1.write(f"**{row['Event']}**")
-                    s_c1.caption(f"{row['Bookie']} | ${row['Stake']} @ {row['Odds']}")
-
-                    outcome = s_c2.selectbox("Set Result", ["Pending", "Won", "Lost", "Push", "Cashed Out"], key=f"out_{row['id']}")
-
-                    if outcome != "Pending":
-                        co_amount = 0.0
-                        if outcome == "Cashed Out":
-                            co_amount = st.number_input("Payout Total", key=f"co_in_{row['id']}")
-
-                        if st.button("SET RESULT", key=f"settle_btn_{row['id']}"):
-                            st.session_state.bets_df.at[idx, 'Status'] = outcome
-                            if outcome == "Won":
-                                st.session_state.bets_df.at[idx, 'P/L'] = (row['Stake'] * row['Odds']) - row['Stake']
-                            elif outcome == "Lost":
-                                st.session_state.bets_df.at[idx, 'P/L'] = -row['Stake']
-                            elif outcome == "Cashed Out":
-                                st.session_state.bets_df.at[idx, 'P/L'] = co_amount - row['Stake']
-                                st.session_state.bets_df.at[idx, 'Cashout_Amt'] = co_amount
-
-                            st.session_state.unsaved_count += 1
-                            st.rerun()
-
-    with tab_history:
-        # SEARCH & FILTER ENGINE
-        search_c1, search_c2 = st.columns(2)
-        target_date = search_c1.date_input("Filter by Date", value=None)
-        target_text = search_c2.text_input("Search Selection Name")
-
-        filtered_view = df_bets.copy()
-        if target_date:
-            filtered_view = filtered_view[filtered_view['Date'] == target_date]
-        if target_text:
-            filtered_view = filtered_view[filtered_view['Event'].str.contains(target_text, case=False)]
-
-        # Display Loop
-        for idx, row in filtered_view.sort_values(['Date', 'id'], ascending=False).iterrows():
+    with t_hist:
+        h1, h2 = st.columns(2)
+        s_d = h1.date_input("Filter Date", value=None)
+        s_t = h2.text_input("Search")
+        hist = df_bets.copy()
+        if s_d: hist = hist[hist['Date'] == s_d]
+        if s_t: hist = hist[hist['Event'].str.contains(s_t, case=False)]
+        for idx, row in hist.sort_values(['Date', 'id'], ascending=False).iterrows():
             with st.expander(f"{row['Date']} | {row['Event']} ({row['Status']})"):
-                info_col, action_col = st.columns([5, 1])
-                info_col.write(f"**{row['Type']}** | {row['Bookie']} | Stake: ${row['Stake']} | P/L: **${row['P/L']}**")
-                if action_col.button("❌ DELETE", key=f"rem_{row['id']}", type="secondary"):
+                info_c, del_c = st.columns([5, 1])
+                info_c.write(f"**{row['Type']}** | **{row['Bookie']}** | Odds: {row['Odds']} | P/L: ${row['P/L']}")
+                if del_c.button("Delete", key=f"del_{row['id']}", type="secondary"):
                     st.session_state.bets_df = df_bets.drop(idx)
-                    st.session_state.unsaved_count += 1
-                    st.rerun()
+                    st.session_state.unsaved_count += 1; st.rerun()
 
-# --- 8. BANKROLL PAGE (Explicit Balance Summary) ---
-elif nav_choice == "Bankroll":
+# --- 8. BANKROLL ---
+elif nav == "Bankroll":
     st.title("Bankroll Intelligence")
-
-    # 8a. Balance Summary Table (Explicit Restoration)
-    st.subheader("Liquidity Summary")
-    summary_rows = []
-
-    active_bookies = df_meta["Bookies"].dropna().unique().tolist()
-
-    for b in active_bookies:
-        # Cash moves (deposits/withdrawals)
-        bookie_cash = df_cash[df_cash['Bookie'] == b]['Amount'].sum()
-        # Graded profits
-        bookie_pl = df_bets[df_bets['Bookie'] == b]['P/L'].sum()
-        # Current exposure
-        bookie_risk = df_bets[(df_bets['Bookie'] == b) & (df_bets['Status'] == "Pending")]['Stake'].sum()
-
-        summary_rows.append({
-            "Bookie": b,
-            "Net Cash Flow": bookie_cash,
-            "Total P/L": bookie_pl,
-            "Current Risk": bookie_risk,
-            "Available Balance": (bookie_cash + bookie_pl - bookie_risk)
-        })
-
-    st.table(pd.DataFrame(summary_rows))
-
-    st.divider()
-
-    # 8b. Transaction Log
-    st.subheader("Manual Cash Entry")
-    with st.form("transaction_entry_form"):
-        tx_c1, tx_c2, tx_c3 = st.columns(3)
-        tx_bookie = tx_c1.selectbox("Select Source", active_bookies)
-        tx_action = tx_c2.selectbox("Action Type", ["Deposit", "Withdrawal", "Bonus"])
-        tx_amount = tx_c3.number_input("Amount ($)", min_value=0.0, step=10.0)
-
-        if st.form_submit_button("LOG TRANSACTION"):
-            final_val = -tx_amount if tx_action == "Withdrawal" else tx_amount
-            new_tx = pd.DataFrame([[date.today(), tx_bookie, tx_action, final_val]], columns=["Date", "Bookie", "Type", "Amount"])
+    with st.form("cash_log_f"):
+        tx1, tx2, tx3 = st.columns(3)
+        tx_b = tx1.selectbox("Bookie", df_meta["Bookies"].dropna().tolist())
+        tx_t = tx2.selectbox("Action", ["Deposit", "Withdrawal", "Bonus"])
+        tx_a = tx3.number_input("Amount", 0.0)
+        if st.form_submit_button("Record Transaction"):
+            v = -tx_a if tx_t == "Withdrawal" else tx_a
+            new_tx = pd.DataFrame([[date.today(), tx_b, tx_t, v]], columns=["Date", "Bookie", "Type", "Amount"])
             st.session_state.cash_df = pd.concat([df_cash, new_tx], ignore_index=True)
-            st.session_state.unsaved_count += 1
-            st.rerun()
+            st.session_state.unsaved_count += 1; st.rerun()
 
-    st.subheader("Transaction History")
-    st.dataframe(st.session_state.cash_df.sort_values("Date", ascending=False), use_container_width=True)
+    # LIQUIDITY SUMMARY (Restored)
+    st.subheader("Liquidity Summary")
+    summary = []
+    for b in df_meta["Bookies"].dropna().unique():
+        net_c = df_cash[df_cash['Bookie'] == b]['Amount'].sum()
+        net_p = df_bets[df_bets['Bookie'] == b]['P/L'].sum()
+        risk = df_bets[(df_bets['Bookie'] == b) & (df_bets['Status'] == "Pending")]['Stake'].sum()
+        summary.append({"Bookie": b, "Net Cash": net_c, "Total P/L": net_p, "Balance": net_c + net_p - risk})
+    st.table(pd.DataFrame(summary))
+    st.dataframe(df_cash.sort_values("Date", ascending=False), use_container_width=True)
 
-# --- 9. SETTINGS PAGE (Explicit Field Management) ---
-elif nav_choice == "Settings":
-    st.title("System Configuration")
-    st.markdown("Edit your global drop-down lists below. These update the local session immediately.")
+# --- 9. SETTINGS ---
+elif nav == "Settings":
+    st.title("User Configuration")
+    st.info("Edit your personal lists. Changes only affect your account.")
+    cfg1, cfg2, cfg3, cfg4 = st.columns(4)
+    s_v = cfg1.text_area("Sports", "\n".join([str(x) for x in df_meta["Sports"].dropna().tolist()]), height=350)
+    l_v = cfg2.text_area("Leagues", "\n".join([str(x) for x in df_meta["Leagues"].dropna().tolist()]), height=350)
+    b_v = cfg3.text_area("Bookies", "\n".join([str(x) for x in df_meta["Bookies"].dropna().tolist()]), height=350)
+    t_v = cfg4.text_area("Bet Types", "\n".join([str(x) for x in df_meta["Types"].dropna().tolist()]), height=350)
 
-    set_col1, set_col2, set_col3, set_col4 = st.columns(4)
-
-    # Sports List
-    raw_s_list = df_meta["Sports"].dropna().tolist()
-    s_input = set_col1.text_area("Category (Sports)", value="\n".join([str(x) for x in raw_s_list]), height=350)
-
-    # Leagues List
-    raw_l_list = df_meta["Leagues"].dropna().tolist()
-    l_input = set_col2.text_area("League List", value="\n".join([str(x) for x in raw_l_list]), height=350)
-
-    # Bookies List
-    raw_b_list = df_meta["Bookies"].dropna().tolist()
-    b_input = set_col3.text_area("Managed Bookies", value="\n".join([str(x) for x in raw_b_list]), height=350)
-
-    # Types List
-    raw_t_list = df_meta["Types"].dropna().tolist()
-    t_input = set_col4.text_area("Bet Types", value="\n".join([str(x) for x in raw_t_list]), height=350)
-
-    if st.button("APPLY CONFIGURATION UPDATES", type="primary"):
-        # Explicit Reconstruction of the Meta Dataframe
-        updated_meta_dict = {
-            "Sports": [x.strip() for x in s_input.split("\n") if x.strip()],
-            "Leagues": [x.strip() for x in l_input.split("\n") if x.strip()],
-            "Bookies": [x.strip() for x in b_input.split("\n") if x.strip()],
-            "Types": [x.strip() for x in t_input.split("\n") if x.strip()]
-        }
-
-        # Padding lengths so DataFrame construction doesn't fail
-        max_len = max(len(v) for v in updated_meta_dict.values())
-        for k in updated_meta_dict:
-            while len(updated_meta_dict[k]) < max_len:
-                updated_meta_dict[k].append("")
-
-        st.session_state.meta_df = pd.DataFrame(updated_meta_dict)
-        st.session_state.unsaved_count += 1
-        st.success("Session settings updated. Remember to Push to Cloud to save permanently.")
+    if st.button("Apply Config Updates", type="primary"):
+        u_meta = {"Sports": [x.strip() for x in s_v.split("\n") if x.strip()],
+                  "Leagues": [x.strip() for x in l_v.split("\n") if x.strip()],
+                  "Bookies": [x.strip() for x in b_v.split("\n") if x.strip()],
+                  "Types": [x.strip() for x in t_v.split("\n") if x.strip()]}
+        st.session_state.meta_df = pd.DataFrame.from_dict(u_meta, orient='index').transpose()
+        st.session_state.unsaved_count += 1; st.success("Updated Successfully!")
