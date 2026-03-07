@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+import json
 
 
 def _init_ticket_buffer():
     if "ticket_legs" not in st.session_state:
-        st.session_state.ticket_legs = []  # list of dicts: {sport, league, event, odds}
+        st.session_state.ticket_legs = []
     if "ticket_mode" not in st.session_state:
         st.session_state.ticket_mode = "Single"
 
@@ -23,6 +24,7 @@ def _ticket_odds():
 
 
 def _render_ticket_legs(df_meta):
+    """Render ticket legs OUTSIDE any form context"""
     st.markdown("##### Ticket Legs")
 
     col_add1, col_add2 = st.columns([3, 1])
@@ -33,15 +35,16 @@ def _render_ticket_legs(df_meta):
             st.session_state.ticket_legs.append(
                 {
                     "sport": df_meta["Sports"].dropna().tolist()[0]
-                    if not df_meta["Sports"].dropna().empty
+                    if df_meta["Sports"].dropna().any()
                     else "",
                     "league": df_meta["Leagues"].dropna().tolist()[0]
-                    if not df_meta["Leagues"].dropna().empty
+                    if df_meta["Leagues"].dropna().any()
                     else "",
                     "event": "",
                     "odds": 1.91,
                 }
             )
+            st.rerun()
 
     if not st.session_state.ticket_legs:
         st.info("No legs added yet. Click **Add Match** to start.")
@@ -78,12 +81,11 @@ def _render_ticket_legs(df_meta):
                 value=float(leg["odds"]),
                 key=f"leg_odds_{i}",
             )
-            remove = c5.button("✕", key=f"leg_remove_{i}")
-            if remove:
+            if c5.button("✕", key=f"leg_remove_{i}"):
                 st.session_state.ticket_legs.pop(i)
-                st.experimental_rerun()
+                st.rerun()
 
-    st.caption(f"Combined odds: **{_ticket_odds():.3f}**")
+    st.caption(f"**Combined odds: {_ticket_odds():.3f}**")
 
 
 def render_wagers(user: str):
@@ -102,6 +104,7 @@ def render_wagers(user: str):
     # Add Bet (single or multi‑match ticket)
     # ------------------------------------------------------------------
     with t_add:
+        # Mode selector (outside form)
         mode_col1, mode_col2 = st.columns([1, 4])
         with mode_col1:
             st.session_state.ticket_mode = st.radio(
@@ -116,6 +119,11 @@ def render_wagers(user: str):
                     "Stake and settlement are handled at ticket level."
                 )
 
+        # Render ticket legs OUTSIDE form
+        if st.session_state.ticket_mode == "Multi‑match ticket":
+            _render_ticket_legs(df_meta)
+
+        # The actual form (no buttons inside!)
         with st.form("add_w_f", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
 
@@ -136,12 +144,9 @@ def render_wagers(user: str):
                 w_o = c3.number_input("Decimal Odds", 1.01, 1000.0, 1.91)
             else:
                 w_e = c2.text_input("Ticket Name / Notes")
-                # odds come from legs, show read‑only current value
                 current_ticket_odds = _ticket_odds()
                 c3.metric("Ticket Odds", f"{current_ticket_odds:.3f}")
-                _render_ticket_legs(df_meta)
-                # also keep w_o to store final odds in row
-                w_o = current_ticket_odds
+                w_o = current_ticket_odds  # use calculated odds
 
             w_st = c3.number_input("Stake", 1.0, 100000.0, 10.0)
             w_res = c3.selectbox(
@@ -161,12 +166,12 @@ def render_wagers(user: str):
 
                 nid = int(df_bets["id"].max() + 1) if not df_bets.empty else 1
 
-                # Store legs as JSON in a new column if multi‑match
+                # Store legs as JSON if multi‑match
                 legs_json = ""
                 if st.session_state.ticket_mode == "Multi‑match ticket":
-                    legs_json = pd.io.json.dumps(st.session_state.ticket_legs)
+                    legs_json = json.dumps(st.session_state.ticket_legs)
 
-                # Ensure column exists
+                # Ensure Legs column exists
                 if "Legs" not in df_bets.columns:
                     df_bets["Legs"] = ""
 
@@ -188,12 +193,11 @@ def render_wagers(user: str):
                             legs_json,
                         ]
                     ],
-                    columns=list(df_bets.columns) + (["Legs"] if "Legs" not in df_bets.columns else []),
+                    columns=["id", "Date", "Sport", "League", "Bookie", "Type",
+                           "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt", "Legs"],
                 )
 
-                # Align columns if needed
-                new_row = new_row[df_bets.columns]
-
+                # Reindex and concat
                 st.session_state.bets_df = pd.concat(
                     [df_bets, new_row], ignore_index=True
                 )
@@ -203,10 +207,10 @@ def render_wagers(user: str):
                     st.session_state.ticket_legs = []
 
                 st.success("Bet added locally. Remember to push to cloud.")
-                st.experimental_rerun()
+                st.rerun()
 
     # ------------------------------------------------------------------
-    # Settlement
+    # Settlement & History sections remain the same...
     # ------------------------------------------------------------------
     with t_pend:
         pending = st.session_state.bets_df[
@@ -255,11 +259,8 @@ def render_wagers(user: str):
                             st.session_state.bets_df.at[idx, "Cashout_Amt"] = co
 
                         st.session_state.unsaved_count += 1
-                        st.experimental_rerun()
+                        st.rerun()
 
-    # ------------------------------------------------------------------
-    # History & Delete
-    # ------------------------------------------------------------------
     with t_hist:
         df_bets = st.session_state.bets_df
         h1, h2 = st.columns(2)
@@ -288,15 +289,15 @@ def render_wagers(user: str):
                         f"| P/L: ${row['P/L']:.2f}"
                     )
 
-                    # show a short legs summary if present
-                    if "Legs" in hist.columns and isinstance(row.get("Legs", ""), str) and row["Legs"]:
+                    # Show legs if present
+                    if "Legs" in hist.columns and pd.notna(row.get("Legs", "")):
                         try:
-                            legs = pd.io.json.loads(row["Legs"])
+                            legs = json.loads(row["Legs"])
                             if legs:
                                 st.markdown("**Ticket Legs:**")
                                 for leg in legs:
                                     st.write(
-                                        f"- {leg.get('sport','')} / {leg.get('league','')} "
+                                        f"• {leg.get('sport','')} / {leg.get('league','')} "
                                         f"· {leg.get('event','')} @ {leg.get('odds','')}"
                                     )
                         except Exception:
@@ -305,4 +306,4 @@ def render_wagers(user: str):
                     if del_c.button("Delete", key=f"del_{row['id']}", type="secondary"):
                         st.session_state.bets_df = df_bets.drop(idx)
                         st.session_state.unsaved_count += 1
-                        st.experimental_rerun()
+                        st.rerun()
