@@ -12,61 +12,49 @@ def inject_global_css():
             background-color: #0d1117;
         }
 
-        .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 3rem;
-        }
-
-        /* PERFECT SIDEBAR BUTTONS */
+        /* CLEAN SIDEBAR BUTTONS */
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #050814 0%, #0d1117 100%);
-            border-right: 1px solid #21262d;
-            padding-top: 1rem;
+            background: #0a0f1a !important;
+            border-right: 1px solid #1a2332 !important;
         }
 
-        /* Sidebar buttons */
         .stButton > button {
-            background: rgba(255, 255, 255, 0.03) !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            border-radius: 12px !important;
-            padding: 14px 16px !important;
-            margin: 6px 0 !important;
-            height: auto !important;
-            font-size: 15px !important;
+            background: rgba(20, 25, 40, 0.8) !important;
+            border: 1px solid rgba(60, 70, 90, 0.5) !important;
+            border-radius: 8px !important;
+            padding: 12px 16px !important;
+            margin: 3px 0 !important;
+            height: 48px !important;
+            font-size: 14px !important;
             font-weight: 600 !important;
-            color: #e6edf3 !important;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+            color: #e2e8f0 !important;
+            box-shadow: none !important;
+            transition: all 0.2s ease !important;
         }
 
         .stButton > button:hover {
-            background: rgba(0, 255, 200, 0.12) !important;
-            border-color: rgba(0, 255, 200, 0.4) !important;
-            color: #00ffc8 !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 8px 25px rgba(0, 255, 200, 0.2) !important;
-        }
-
-        .stButton > button:active {
-            transform: translateY(0px) !important;
-        }
-
-        /* Push button */
-        button[kind="primary"] {
-            background: linear-gradient(135deg, #00ffc8 0%, #00e6b3 100%) !important;
+            background: rgba(0, 255, 200, 0.08) !important;
             border-color: rgba(0, 255, 200, 0.3) !important;
-            color: #050814 !important;
-            box-shadow: 0 6px 20px rgba(0, 255, 200, 0.3) !important;
+            color: #00ffc8 !important;
+            box-shadow: 0 2px 12px rgba(0, 255, 200, 0.15) !important;
+            transform: none !important;
+        }
+
+        /* Sync button */
+        button[kind="primary"] {
+            background: linear-gradient(135deg, #00ffc8 0%, #00e0b5 100%) !important;
+            border: none !important;
+            color: #0a0f1a !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 16px rgba(0, 255, 200, 0.3) !important;
         }
 
         button[kind="primary"]:hover {
-            background: linear-gradient(135deg, #00e6b3 0%, #00d4a8 100%) !important;
-            box-shadow: 0 10px 30px rgba(0, 255, 200, 0.4) !important;
-            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(0, 255, 200, 0.4) !important;
         }
 
-        /* Secondary buttons (delete, etc.) */
-        button[kind="secondary"] {
+        /* Logout */
+        button:has(span:contains("Logout")) {
             color: #ff6b6b !important;
             border-color: rgba(255, 107, 107, 0.4) !important;
         }
