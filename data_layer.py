@@ -1,12 +1,14 @@
+import streamlit as st
 from datetime import datetime, date
 from typing import List
 
 import pandas as pd
-import streamlit as st
 from streamlit_gsheets import GSheetsConnection
+
 
 def _get_conn() -> GSheetsConnection:
     return st.connection("gsheets", type=GSheetsConnection)
+
 
 def _safe_load(tab_name: str, columns: List[str]) -> pd.DataFrame:
     conn = _get_conn()
@@ -21,7 +23,9 @@ def _safe_load(tab_name: str, columns: List[str]) -> pd.DataFrame:
         conn.update(worksheet=tab_name, data=df)
         return df
 
+
 def init_user_data(user: str):
+    # Ensure session state exists
     if "unsaved_count" not in st.session_state:
         st.session_state.unsaved_count = 0
     if "last_sync" not in st.session_state:
@@ -56,9 +60,9 @@ def init_user_data(user: str):
         st.session_state.meta_tab = meta_tab
         st.session_state.last_sync = datetime.now().strftime("%H:%M")
     except Exception as e:
-        import streamlit as st
-        st.error(f"Routing error: {e}")
+        st.error(f"Data loading error: {e}")
         st.stop()
+
 
 def push_to_cloud():
     conn = _get_conn()
@@ -67,3 +71,5 @@ def push_to_cloud():
     conn.update(worksheet=st.session_state.meta_tab, data=st.session_state.meta_df)
     st.session_state.unsaved_count = 0
     st.session_state.last_sync = datetime.now().strftime("%H:%M")
+    st.success("All changes saved to cloud.")
+    st.rerun()
