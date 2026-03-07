@@ -132,13 +132,8 @@ def render_dashboard():
 
     s_text, s_color = get_streak_stats(df_filtered)
     with c4:
-        st.markdown(f"""
-            <div style='text-align:center;padding:16px;background:#1a2332;
-                        border-radius:10px;border:1px solid #2a3444;'>
-                <div style='color:#8b9ba5;font-size:12px;font-weight:600;'>STREAK</div>
-                <div style='color:{s_color};font-size:24px;font-weight:800;'>{s_text}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        st.metric("Streak", s_text)
+
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("Turnover", f"${total_s['turnover']:,.2f}")
