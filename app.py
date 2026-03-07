@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_option_menu import option_menu
 
 from auth import ensure_auth, logout_button
 from data_layer import init_user_data, push_to_cloud
@@ -17,30 +18,71 @@ if user is None:
 
 init_user_data(user)
 
+# ========== PRETTY SIDEBAR ==========
 with st.sidebar:
-    st.subheader(f"🎯 SharpTracker: {user.upper()}")
+    st.markdown(f"## 🎯 **{user.upper()}**")
     st.caption(f"Status: Synchronized  •  Last sync: {st.session_state.last_sync}")
 
     if st.session_state.unsaved_count > 0:
+        st.warning(f"**{st.session_state.unsaved_count} Unsaved Changes**")
         if st.button("💾 Push to Cloud", type="primary", use_container_width=True):
             push_to_cloud()
 
-    logout_button()
-
     st.markdown("---")
 
-    # prettier menu placeholder: we’ll improve this in next step
-    nav = st.radio(
-        "Navigation",
-        ["Dashboard", "Wagers", "Bankroll", "Settings"],
-        label_visibility="collapsed",
+    # BEAUTIFUL NAVIGATION MENU
+    selected = option_menu(
+        menu_title=None,  # title for this block
+        options=["Dashboard", "Wagers", "Bankroll", "Settings"],
+        icons=["graph-up", "receipt", "wallet2", "gear-fill"],
+        menu_icon="cast",
+        default_index=0,
+        styles={
+            "container": {
+                "padding": "5px 14px",
+                "margin": "0",
+                "background-color": "#050814",
+            },
+            "nav-link": {
+                "font-size": "16px",
+                "text-align": "left",
+                "margin": "0px",
+                "--hover-color": "#00ffc8",
+            },
+            "nav-link-selected": {
+                "background-color": "transparent",
+                "color": "#00ffc8",
+            },
+            "icon": {
+                "font-size": "18px",
+                "color": "#8b949e",
+            },
+            "icon-selected": {
+                "color": "#00ffc8",
+            },
+        },
     )
 
-if nav == "Dashboard":
+    st.markdown("---")
+    logout_button()
+
+    # FOOTER
+    st.markdown(
+        """
+        <div style='text-align: center; color: #8b949e; font-size: 11px;
+                    font-weight: 700; margin-top: 2rem;'>
+            Made by Akenza Web Studio
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# ========== PAGE ROUTING ==========
+if selected == "Dashboard":
     render_dashboard()
-elif nav == "Wagers":
+elif selected == "Wagers":
     render_wagers(user)
-elif nav == "Bankroll":
+elif selected == "Bankroll":
     render_bankroll()
-elif nav == "Settings":
+elif selected == "Settings":
     render_settings()
