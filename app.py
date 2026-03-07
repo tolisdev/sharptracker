@@ -26,7 +26,7 @@ if "selected_page" not in st.session_state:
 with st.sidebar:
     # Header
     st.markdown("### 🎯 SharpTracker")
-    st.caption(f"*{user.upper()}*")
+    st.caption(f"*{user)}*")
 
     st.caption(f"Last sync: {st.session_state.last_sync}")
 

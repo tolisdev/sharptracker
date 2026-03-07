@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, date
+from datetime import datetime
 from typing import List
 
 import pandas as pd
@@ -25,7 +25,6 @@ def _safe_load(tab_name: str, columns: List[str]) -> pd.DataFrame:
 
 
 def init_user_data(user: str):
-    # Ensure session state exists
     if "unsaved_count" not in st.session_state:
         st.session_state.unsaved_count = 0
     if "last_sync" not in st.session_state:
@@ -41,11 +40,20 @@ def init_user_data(user: str):
     try:
         b_df = _safe_load(
             bets_tab,
-            ["id", "Date", "Sport", "League", "Bookie", "Type",
-             "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt"],
+            [
+                "id", "Date", "Sport", "League", "Bookie", "Type",
+                "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt",
+                "Legs", "Tipster",
+            ],
         )
-        c_df = _safe_load(cash_tab, ["Date", "Bookie", "Type", "Amount"])
-        m_df = _safe_load(meta_tab, ["Sports", "Leagues", "Bookies", "Types"])
+        c_df = _safe_load(
+            cash_tab,
+            ["Date", "Bookie", "Type", "Amount"],
+        )
+        m_df = _safe_load(
+            meta_tab,
+            ["Sports", "Leagues", "Bookies", "Types", "Tipsters"],
+        )
 
         if not b_df.empty:
             b_df["Date"] = pd.to_datetime(b_df["Date"]).dt.date
@@ -59,6 +67,7 @@ def init_user_data(user: str):
         st.session_state.cash_tab = cash_tab
         st.session_state.meta_tab = meta_tab
         st.session_state.last_sync = datetime.now().strftime("%H:%M")
+
     except Exception as e:
         st.error(f"Data loading error: {e}")
         st.stop()

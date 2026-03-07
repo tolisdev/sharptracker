@@ -8,7 +8,7 @@ def render_settings():
     st.title("User Configuration")
     st.info("Edit your personal lists. Changes only affect your account.")
 
-    cfg1, cfg2, cfg3, cfg4 = st.columns(4)
+    cfg1, cfg2, cfg3, cfg4, cfg5 = st.columns(5)
 
     s_v = cfg1.text_area(
         "Sports",
@@ -30,13 +30,20 @@ def render_settings():
         "\n".join([str(x) for x in df_meta["Types"].dropna().tolist()]),
         height=350,
     )
+    tip_v = cfg5.text_area(
+        "Tipsters",
+        "\n".join([str(x) for x in df_meta["Tipsters"].dropna().tolist()])
+        if "Tipsters" in df_meta.columns else "",
+        height=350,
+    )
 
     if st.button("Apply Config Updates", type="primary"):
         u_meta = {
-            "Sports": [x.strip() for x in s_v.split("\n") if x.strip()],
-            "Leagues": [x.strip() for x in l_v.split("\n") if x.strip()],
-            "Bookies": [x.strip() for x in b_v.split("\n") if x.strip()],
-            "Types": [x.strip() for x in t_v.split("\n") if x.strip()],
+            "Sports":   [x.strip() for x in s_v.split("\n") if x.strip()],
+            "Leagues":  [x.strip() for x in l_v.split("\n") if x.strip()],
+            "Bookies":  [x.strip() for x in b_v.split("\n") if x.strip()],
+            "Types":    [x.strip() for x in t_v.split("\n") if x.strip()],
+            "Tipsters": [x.strip() for x in tip_v.split("\n") if x.strip()],
         }
         st.session_state.meta_df = pd.DataFrame.from_dict(
             u_meta, orient="index"

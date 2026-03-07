@@ -26,11 +26,12 @@ def _ticket_odds():
 def _render_ticket_legs(df_meta):
     sports = df_meta["Sports"].dropna().tolist()
     leagues = df_meta["Leagues"].dropna().tolist()
+    tipsters = ["— None —"] + df_meta["Tipsters"].dropna().tolist() if "Tipsters" in df_meta.columns else ["— None —"]
 
     st.markdown("##### Ticket Legs")
     add_col, odds_col = st.columns([3, 1])
     with add_col:
-        st.caption("Each leg has its own sport, league and odds. Final odds = product of all legs.")
+        st.caption("Each leg has its own sport, league, tipster and odds.")
     with odds_col:
         if st.button("➕ Add Match"):
             st.session_state.ticket_legs.append({
@@ -38,17 +39,17 @@ def _render_ticket_legs(df_meta):
                 "league": leagues[0] if leagues else "",
                 "event": "",
                 "odds": 1.91,
+                "tipster": "",
             })
             st.rerun()
 
     if not st.session_state.ticket_legs:
-        st.info("Click **Add Match** to build your ticket.")
+        st.info("Click Add Match to build your ticket.")
         return
 
     for i, leg in enumerate(st.session_state.ticket_legs):
         with st.container(border=True):
-            # Row 1: Sport, League, Remove button
-            c1, c2, c3 = st.columns([2, 2, 0.5])
+            c1, c2, c3, c4 = st.columns([2, 2, 2, 0.5])
             leg["sport"] = c1.selectbox(
                 "Sport",
                 sports if sports else [leg["sport"]],
@@ -61,11 +62,16 @@ def _render_ticket_legs(df_meta):
                 index=(leagues.index(leg["league"]) if leg["league"] in leagues else 0),
                 key=f"leg_league_{i}",
             )
-            if c3.button("✕", key=f"leg_remove_{i}"):
+            leg["tipster"] = c3.selectbox(
+                "Tipster",
+                tipsters,
+                index=(tipsters.index(leg["tipster"]) if leg.get("tipster") in tipsters else 0),
+                key=f"leg_tipster_{i}",
+            )
+            if c4.button("✕", key=f"leg_remove_{i}"):
                 st.session_state.ticket_legs.pop(i)
                 st.rerun()
 
-            # Row 2: Event, Odds
             e1, e2 = st.columns([3, 1])
             leg["event"] = e1.text_input(
                 "Event / Selection",
@@ -83,13 +89,13 @@ def _render_ticket_legs(df_meta):
     combined = _ticket_odds()
     st.markdown(
         f"""
-        <div style='padding: 10px 14px; background: rgba(0,255,200,0.08);
-                    border: 1px solid rgba(0,255,200,0.25); border-radius: 8px; margin-top: 8px;'>
-            <span style='color:#8b9ba5; font-size:12px;'>COMBINED ODDS</span>
-            <span style='color:#00ffc8; font-size:20px; font-weight:800; margin-left: 12px;'>
+        <div style="padding: 10px 14px; background: rgba(0,255,200,0.08);
+                    border: 1px solid rgba(0,255,200,0.25); border-radius: 8px; margin-top: 8px;">
+            <span style="color:#8b9ba5;font-size:12px;">COMBINED ODDS</span>
+            <span style="color:#00ffc8;font-size:20px;font-weight:800;margin-left:12px;">
                 {combined:.3f}
             </span>
-            <span style='color:#8b9ba5; font-size:12px; margin-left:12px;'>
+            <span style="color:#8b9ba5;font-size:12px;margin-left:12px;">
                 {len(st.session_state.ticket_legs)} legs
             </span>
         </div>
@@ -104,7 +110,7 @@ def render_wagers(user: str):
 
     _init_ticket_buffer()
 
-    st.title(f"Wager Management · {user}")
+    st.title(f"Wager Management: {user}")
 
     t_add, t_pend, t_hist = st.tabs(
         ["➕ Add Bet", "✅ Settlement", "📚 History & Delete"]
@@ -122,8 +128,9 @@ def render_wagers(user: str):
                 horizontal=False,
             )
 
-        # Render legs outside the form (buttons not allowed inside forms)
-        if st.session_state.ticket_mode == "Multi-match ticket":
+        is_multi = st.session_state.ticket_mode == "Multi-match ticket"
+
+        if is_multi:
             _render_ticket_legs(df_meta)
 
         with st.form("add_w_f", clear_on_submit=True):
@@ -133,42 +140,39 @@ def render_wagers(user: str):
             leagues_list = df_meta["Leagues"].dropna().tolist()
             bookies_list = df_meta["Bookies"].dropna().tolist()
             types_list = df_meta["Types"].dropna().tolist()
+            tipsters_list = ["— None —"] + df_meta["Tipsters"].dropna().tolist() \
+                if "Tipsters" in df_meta.columns else ["— None —"]
 
-            is_multi = st.session_state.ticket_mode == "Multi-match ticket"
+            w_d = c1.date_input("Date", date.today())
 
-            # For single bets, show sport/league at top level
-            # For multi-match, sport/league come from the legs
             if not is_multi:
                 w_s = c1.selectbox("Sport", sports_list)
                 w_l = c1.selectbox("League", leagues_list)
             else:
-                # Show read-only combined sport/league summary
                 c1.markdown(
-                    "<div style='color:#8b9ba5; font-size:12px; padding-top:8px;'>"
-                    "Sport & League are set per leg above.</div>",
-                    unsafe_allow_html=True
+                    "<div style='color:#8b9ba5;font-size:12px;padding-top:8px;'>"
+                    "Sport & League set per leg above.</div>",
+                    unsafe_allow_html=True,
                 )
                 w_s = "Parlay"
                 w_l = "Multi"
 
-            w_d = c1.date_input("Date", date.today())
             w_b = c2.selectbox("Bookie", bookies_list)
             w_t = c2.selectbox("Type", types_list)
 
             if not is_multi:
                 w_e = c2.text_input("Selection / Event")
                 w_o = c3.number_input("Decimal Odds", 1.01, 1000.0, 1.91)
+                w_tip = c3.selectbox("Tipster", tipsters_list)
             else:
                 w_e = c2.text_input("Ticket Name / Notes")
                 current_odds = _ticket_odds()
                 c3.metric("Ticket Odds", f"{current_odds:.3f}")
                 w_o = current_odds
+                w_tip = "— None —"
 
             w_st = c3.number_input("Stake", 1.0, 100000.0, 10.0)
-            w_res = c3.selectbox(
-                "Status",
-                ["Pending", "Won", "Lost", "Push", "Cashed Out"],
-            )
+            w_res = c3.selectbox("Status", ["Pending", "Won", "Lost", "Push", "Cashed Out"])
 
             submitted = st.form_submit_button("Log Locally")
             if submitted:
@@ -185,16 +189,20 @@ def render_wagers(user: str):
                 if is_multi:
                     legs_json = json.dumps(st.session_state.ticket_legs)
 
-                if "Legs" not in df_bets.columns:
+                tipster_val = "" if w_tip == "— None —" else w_tip
+
+                if "Legs" not in st.session_state.bets_df.columns:
                     st.session_state.bets_df["Legs"] = ""
+                if "Tipster" not in st.session_state.bets_df.columns:
+                    st.session_state.bets_df["Tipster"] = ""
 
                 new_row = pd.DataFrame(
-                    [[nid, w_d, w_s, w_l, w_b, w_t, w_e, w_o, w_st, w_res, pl, 0.0, legs_json]],
+                    [[nid, w_d, w_s, w_l, w_b, w_t, w_e, w_o, w_st, w_res, pl, 0.0, legs_json, tipster_val]],
                     columns=["id", "Date", "Sport", "League", "Bookie", "Type",
-                             "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt", "Legs"],
+                             "Event", "Odds", "Stake", "Status", "P/L", "Cashout_Amt",
+                             "Legs", "Tipster"],
                 )
 
-                # Align with existing columns
                 for col in st.session_state.bets_df.columns:
                     if col not in new_row.columns:
                         new_row[col] = ""
@@ -224,14 +232,16 @@ def render_wagers(user: str):
                 with st.container(border=True):
                     pc1, pc2, pc3 = st.columns([3, 2, 1])
                     pc1.write(f"**{row['Event']}**  ·  ${float(row['Stake']):.2f}  ·  {row['Bookie']}")
+                    if row.get("Tipster"):
+                        pc1.caption(f"Tipster: {row['Tipster']}")
 
-                    # Show legs summary for parlays
                     if row.get("Sport") == "Parlay" and row.get("Legs"):
                         try:
                             legs = json.loads(row["Legs"])
                             with pc1:
                                 for leg in legs:
-                                    st.caption(f"└ {leg.get('sport','')} · {leg.get('event','')} @ {leg.get('odds','')}")
+                                    tip_label = f" · {leg.get('tipster','')}" if leg.get("tipster") and leg.get("tipster") != "— None —" else ""
+                                    st.caption(f"└ {leg.get('sport','')} · {leg.get('event','')} @ {leg.get('odds','')}{tip_label}")
                         except Exception:
                             pass
 
@@ -288,7 +298,8 @@ def render_wagers(user: str):
         else:
             for idx, row in hist.sort_values(["Date", "id"], ascending=False).iterrows():
                 tag = "🎯 PARLAY" if row.get("Sport") == "Parlay" else row.get("Sport", "")
-                label = f"{row['Date']} | {tag} | {row['Event']} ({row['Status']})"
+                tipster_tag = f" · {row['Tipster']}" if row.get("Tipster") else ""
+                label = f"{row['Date']} | {tag} | {row['Event']} ({row['Status']}){tipster_tag}"
                 with st.expander(label):
                     info_c, del_c = st.columns([5, 1])
                     info_c.write(
@@ -297,17 +308,19 @@ def render_wagers(user: str):
                         f"| Stake: ${float(row['Stake']):.2f}  "
                         f"| P/L: ${float(row['P/L']):.2f}"
                     )
+                    if row.get("Tipster"):
+                        info_c.caption(f"Tipster: {row['Tipster']}")
 
-                    # Show legs
                     if row.get("Sport") == "Parlay" and row.get("Legs"):
                         try:
                             legs = json.loads(row["Legs"])
                             if legs:
                                 st.markdown("**Legs:**")
                                 for leg in legs:
+                                    tip_label = f" · _{leg.get('tipster','')}_" if leg.get("tipster") and leg.get("tipster") != "— None —" else ""
                                     st.write(
                                         f"• **{leg.get('sport','')}** / {leg.get('league','')} "
-                                        f"— {leg.get('event','')} @ **{leg.get('odds','')}**"
+                                        f"— {leg.get('event','')} @ **{leg.get('odds','')}**{tip_label}"
                                     )
                         except Exception:
                             pass
