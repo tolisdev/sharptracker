@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_option_menu import option_menu
 
 from auth import ensure_auth, logout_button
 from data_layer import init_user_data, push_to_cloud
@@ -18,7 +17,7 @@ if user is None:
 
 init_user_data(user)
 
-# ========== PRETTY SIDEBAR ==========
+# ========== BULLETPROOF SIDEBAR ==========
 with st.sidebar:
     st.markdown(f"## 🎯 **{user.upper()}**")
     st.caption(f"Status: Synchronized  •  Last sync: {st.session_state.last_sync}")
@@ -30,54 +29,47 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # BEAUTIFUL NAVIGATION MENU
-    selected = option_menu(
-        menu_title=None,  # title for this block
-        options=["Dashboard", "Wagers", "Bankroll", "Settings"],
-        icons=["graph-up", "receipt", "wallet2", "gear-fill"],
-        menu_icon="cast",
-        default_index=0,
-        styles={
-            "container": {
-                "padding": "5px 14px",
-                "margin": "0",
-                "background-color": "#050814",
-            },
-            "nav-link": {
-                "font-size": "16px",
-                "text-align": "left",
-                "margin": "0px",
-                "--hover-color": "#00ffc8",
-            },
-            "nav-link-selected": {
-                "background-color": "transparent",
-                "color": "#00ffc8",
-            },
-            "icon": {
-                "font-size": "18px",
-                "color": "#8b949e",
-            },
-            "icon-selected": {
-                "color": "#00ffc8",
-            },
-        },
-    )
+    # PURE CSS BUTTON NAVIGATION (NO LAG!)
+    if "selected_page" not in st.session_state:
+        st.session_state.selected_page = "Dashboard"
 
+    # Button definitions
+    pages = [
+        ("Dashboard", "📊", "#00ffc8"),
+        ("Wagers", "🎯", "#00d4ff"),
+        ("Bankroll", "💰", "#00ff88"),
+        ("Settings", "⚙️", "#ffaa00"),
+    ]
+
+    for page_name, icon, color in pages:
+        if st.button(f"{icon} {page_name}",
+                    key=f"nav_{page_name}",
+                    use_container_width=True,
+                    help=f"Go to {page_name}"):
+            st.session_state.selected_page = page_name
+            st.rerun()
+
+    # Visual indicator for current page
     st.markdown("---")
-    logout_button()
-
-    # FOOTER
     st.markdown(
-        """
-        <div style='text-align: center; color: #8b949e; font-size: 11px;
-                    font-weight: 700; margin-top: 2rem;'>
-            Made by Akenza Web Studio
+        f"""
+        <div style='text-align: center; padding: 12px;
+                    background: rgba(0, 255, 200, 0.1);
+                    border-radius: 10px; border: 1px solid rgba(0, 255, 200, 0.3);'>
+            <span style='color: #00ffc8; font-weight: 700; font-size: 14px;'>
+                {st.session_state.selected_page}
+            </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    st.markdown("---")
+    logout_button()
+
 # ========== PAGE ROUTING ==========
+selected = st.session_state.selected_page
+
 if selected == "Dashboard":
     render_dashboard()
 elif selected == "Wagers":
