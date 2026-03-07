@@ -7,6 +7,7 @@ from views_dashboard import render_dashboard
 from views_wagers import render_wagers
 from views_bankroll import render_bankroll
 from views_settings import render_settings
+from analytics import basic_counters  # we'll use this
 
 st.set_page_config(page_title="SharpTracker Elite", layout="wide", page_icon="🎯")
 inject_global_css()
@@ -17,20 +18,29 @@ if user is None:
 
 init_user_data(user)
 
-# Initialize page state if missing
+# Initialize page state
 if "selected_page" not in st.session_state:
     st.session_state.selected_page = "Dashboard"
 
 # ========== CLEAN SIDEBAR ==========
 with st.sidebar:
     # Header
-    col_h1, col_h2 = st.columns([1, 2])
-    with col_h1:
-        st.markdown("### 🎯 SharpTracker")
-    with col_h2:
-        st.caption(f"*{user.upper()}*")
+    st.markdown("### 🎯 SharpTracker")
+    st.caption(f"*{user.upper()}*")
 
     st.caption(f"Last sync: {st.session_state.last_sync}")
+
+    # PROFIT & RTP COUNTERS
+    df_bets = st.session_state.bets_df
+    if not df_bets.empty:
+        counters = basic_counters(df_bets)
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            st.metric("Profit", f"${counters['net_pl']:,.0f}")
+        with col_p2:
+            st.metric("ROI", f"{counters['roi_pct']:.1f}%")
+    else:
+        st.caption("📊 Log bets to see stats")
 
     if st.session_state.unsaved_count > 0:
         st.warning(f"**{st.session_state.unsaved_count} unsaved**")
@@ -39,28 +49,24 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Navigation buttons
-    if st.button("📊 Dashboard", use_container_width=True, key="btn_dash"):
+    # Navigation (matches your screenshot exactly)
+    if st.button("📊 Dashboard", use_container_width=True):
         st.session_state.selected_page = "Dashboard"
         st.rerun()
 
-    if st.button("🎯 Wagers", use_container_width=True, key="btn_wagers"):
+    if st.button("🎯 Wagers", use_container_width=True):
         st.session_state.selected_page = "Wagers"
         st.rerun()
 
-    if st.button("💰 Bankroll", use_container_width=True, key="btn_bank"):
+    if st.button("💰 Bankroll", use_container_width=True):
         st.session_state.selected_page = "Bankroll"
         st.rerun()
 
-    if st.button("⚙️ Settings", use_container_width=True, key="btn_settings"):
+    if st.button("⚙️ Settings", use_container_width=True):
         st.session_state.selected_page = "Settings"
         st.rerun()
 
     st.markdown("---")
-
-    # Active page indicator
-    st.success(f"→ {st.session_state.selected_page}", icon="✅")
-
     logout_button()
 
 # ========== ROUTING ==========
