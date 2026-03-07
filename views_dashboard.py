@@ -56,11 +56,6 @@ def basic_counters(df):
 
 
 def _explode_for_sport_analysis(df):
-    """
-    Expand parlay legs into individual rows for sport/league chart analysis.
-    Each leg gets proportional P/L (total P/L / number of legs).
-    Regular single bets pass through unchanged.
-    """
     rows = []
     for _, row in df.iterrows():
         if row.get("Sport") == "Parlay" and row.get("Legs"):
@@ -83,6 +78,30 @@ def _explode_for_sport_analysis(df):
     return pd.DataFrame(rows)
 
 
+def _get_tipster_column(df):
+    rows = []
+    for _, row in df.iterrows():
+        if row.get("Sport") == "Parlay" and row.get("Legs"):
+            try:
+                legs = json.loads(row["Legs"])
+                if legs:
+                    leg_pl = float(row["P/L"]) / len(legs)
+                    leg_stake = float(row["Stake"]) / len(legs)
+                    for leg in legs:
+                        tip = leg.get("tipster", "")
+                        if not tip or tip == "— None —":
+                            tip = "No Tipster"
+                        rows.append({"Tipster": tip, "P/L": leg_pl, "Stake": leg_stake, "Status": row["Status"]})
+                    continue
+            except Exception:
+                pass
+        tip = row.get("Tipster", "")
+        if not tip or str(tip).strip() == "" or str(tip) == "— None —":
+            tip = "No Tipster"
+        rows.append({"Tipster": tip, "P/L": float(row["P/L"]), "Stake": float(row["Stake"]), "Status": row["Status"]})
+    return pd.DataFrame(rows)
+
+
 def render_dashboard():
     df_bets = st.session_state.bets_df.copy()
     st.title("Performance Intelligence")
@@ -90,23 +109,52 @@ def render_dashboard():
     df_filtered = df_bets.copy()
 
     with st.expander("🔍 Filters", expanded=False):
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         bookie_f = col1.multiselect("Bookie", sorted(df_bets["Bookie"].dropna().unique()))
         type_f = col2.multiselect("Bet Type", sorted(df_bets["Type"].dropna().unique()))
         sport_f = col3.multiselect("Sport", sorted(df_bets["Sport"].dropna().unique()))
+
+        # Tipster filter — collects from both single bets and parlay legs
+        all_tipsters = set(df_bets["Tipster"].dropna().unique())
+        if "Legs" in df_bets.columns:
+            for legs_val in df_bets["Legs"].dropna():
+                if legs_val:
+                    try:
+                        for leg in json.loads(legs_val):
+                            t = leg.get("tipster", "")
+                            if t and t != "— None —":
+                                all_tipsters.add(t)
+                    except Exception:
+                        pass
+        all_tipsters.discard("")
+        tipster_f = col4.multiselect("Tipster", sorted(all_tipsters))
+
         if bookie_f:
             df_filtered = df_filtered[df_filtered["Bookie"].isin(bookie_f)]
         if type_f:
             df_filtered = df_filtered[df_filtered["Type"].isin(type_f)]
         if sport_f:
             df_filtered = df_filtered[df_filtered["Sport"].isin(sport_f)]
+        if tipster_f:
+            def match_tipster(row):
+                if row.get("Tipster") in tipster_f:
+                    return True
+                if row.get("Sport") == "Parlay" and row.get("Legs"):
+                    try:
+                        for leg in json.loads(row["Legs"]):
+                            if leg.get("tipster") in tipster_f:
+                                return True
+                    except Exception:
+                        pass
+                return False
+            df_filtered = df_filtered[df_filtered.apply(match_tipster, axis=1)]
 
     if df_filtered.empty:
         st.info("Log your first bet to activate analytics.")
         return
 
-    # Exploded df for sport/league charts (parlays split into legs)
     df_exploded = _explode_for_sport_analysis(df_filtered)
+    df_tipsters = _get_tipster_column(df_filtered)
 
     today_s = _period_stats(df_filtered, 1)
     week_s = _period_stats(df_filtered, 7)
@@ -123,17 +171,14 @@ def render_dashboard():
 
     st.divider()
 
-    # Core metrics
+    # Key metrics
     st.markdown("### 🎯 Key Metrics")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Net P/L", f"${total_s['net_pl']:,.2f}")
     c2.metric("ROI", f"{total_s['roi_pct']:.1f}%")
     c3.metric("Hit Rate", f"{total_s['accuracy_pct']:.1f}%")
-
     s_text, s_color = get_streak_stats(df_filtered)
-    with c4:
-        st.metric("Streak", s_text)
-
+    c4.metric("Streak", s_text)
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("Turnover", f"${total_s['turnover']:,.2f}")
@@ -143,15 +188,14 @@ def render_dashboard():
 
     st.divider()
 
-    # Charts - uses exploded df so parlay legs count per sport
+    # Breakdown charts
     st.markdown("### 📊 Breakdown")
     ch1, ch2, ch3 = st.columns(3)
 
     with ch1:
         sport_pl = df_exploded.groupby("Sport")["P/L"].sum().sort_values(ascending=False).head(8)
         fig1 = px.bar(x=sport_pl.index, y=sport_pl.values,
-                      title="P/L by Sport (incl. parlay legs)",
-                      color_discrete_sequence=["#00ffc8"])
+                      title="P/L by Sport", color_discrete_sequence=["#00ffc8"])
         fig1.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig1, use_container_width=True)
 
@@ -166,19 +210,65 @@ def render_dashboard():
     with ch3:
         type_pl = df_filtered.groupby("Type")["P/L"].sum()
         fig3 = px.bar(x=type_pl.index, y=type_pl.values,
-                      title="P/L by Type",
-                      color_discrete_sequence=["#ff6b6b"])
+                      title="P/L by Type", color_discrete_sequence=["#ff6b6b"])
         fig3.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig3, use_container_width=True)
 
-    # League breakdown (exploded)
     league_pl = df_exploded.groupby("League")["P/L"].sum().sort_values(ascending=False).head(8)
     if len(league_pl) > 0:
         fig_l = px.bar(x=league_pl.index, y=league_pl.values,
-                       title="P/L by League (incl. parlay legs)",
-                       color_discrete_sequence=["#00d4ff"])
+                       title="P/L by League", color_discrete_sequence=["#00d4ff"])
         fig_l.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig_l, use_container_width=True)
+
+    st.divider()
+
+    # Tipster analysis
+    st.markdown("### 🧠 Tipster Analysis")
+    if not df_tipsters.empty:
+        tip_pl = df_tipsters.groupby("Tipster")["P/L"].sum().sort_values(ascending=False)
+        tip_turnover = df_tipsters.groupby("Tipster")["Stake"].sum()
+        tip_roi = ((tip_pl / tip_turnover) * 100).round(1)
+        tip_bets = df_tipsters.groupby("Tipster")["P/L"].count()
+
+        tip_summary = pd.DataFrame({
+            "P/L": tip_pl,
+            "ROI (%)": tip_roi,
+            "Bets": tip_bets,
+            "Turnover": tip_turnover,
+        }).reset_index()
+
+        t1, t2 = st.columns(2)
+
+        with t1:
+            colors = ["#00ffc8" if v >= 0 else "#ff4b4b" for v in tip_pl.values]
+            fig_t1 = go.Figure(go.Bar(
+                x=tip_pl.index, y=tip_pl.values, marker_color=colors,
+            ))
+            fig_t1.update_layout(title="P/L by Tipster", template="plotly_dark",
+                                  height=300, margin=dict(t=30, b=10, l=10, r=10))
+            st.plotly_chart(fig_t1, use_container_width=True)
+
+        with t2:
+            roi_colors = ["#00ffc8" if v >= 0 else "#ff4b4b" for v in tip_roi.values]
+            fig_t2 = go.Figure(go.Bar(
+                x=tip_roi.index, y=tip_roi.values, marker_color=roi_colors,
+            ))
+            fig_t2.update_layout(title="ROI % by Tipster", template="plotly_dark",
+                                  height=300, margin=dict(t=30, b=10, l=10, r=10))
+            st.plotly_chart(fig_t2, use_container_width=True)
+
+        st.dataframe(
+            tip_summary.style.format({
+                "P/L": "${:.2f}",
+                "ROI (%)": "{:.1f}%",
+                "Turnover": "${:.2f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No tipster data yet. Assign tipsters when logging bets.")
 
     st.divider()
 
