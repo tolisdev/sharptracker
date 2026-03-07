@@ -4,184 +4,143 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
 
-from analytics import get_streak_stats, basic_counters
 
 def _period_stats(df, days_back):
-    """Calculate stats for specific period"""
     cutoff = datetime.now().date() - timedelta(days=days_back)
-    period_df = df[df['Date'] >= cutoff]
+    period_df = df[df["Date"] >= cutoff]
     if period_df.empty:
-        return {'bets': 0, 'pl': 0, 'roi': 0, 'hit_rate': 0, 'turnover': 0}
-    c = basic_counters(period_df)
-    return {
-        'bets': c['total_bets'],
-        'pl': c['net_pl'],
-        'roi': c['roi_pct'],
-        'hit_rate': c['accuracy_pct'],
-        'turnover': c['turnover']
-    }
+        return {"bets": 0, "pl": 0, "roi": 0, "hit_rate": 0, "turnover": 0}
+    total_bets = len(period_df)
+    net_pl = pd.to_numeric(period_df["P/L"]).sum()
+    turnover = pd.to_numeric(period_df["Stake"]).sum()
+    graded = period_df[period_df["Status"].isin(["Won", "Lost"])]
+    won = len(graded[graded["Status"] == "Won"])
+    lost = len(graded[graded["Status"] == "Lost"])
+    hit_rate = (won / (won + lost) * 100) if (won + lost) > 0 else 0
+    roi = (net_pl / turnover * 100) if turnover > 0 else 0
+    return {"bets": total_bets, "pl": net_pl, "roi": roi, "hit_rate": hit_rate, "turnover": turnover}
+
+
+def get_streak_stats(df):
+    if df.empty:
+        return "N/A", "#8b949e"
+    graded = df[df["Status"].isin(["Won", "Lost"])].sort_values(["Date", "id"], ascending=False)
+    if graded.empty:
+        return "0-0", "#8b949e"
+    res = graded["Status"].tolist()
+    curr, count = res[0], 0
+    for r in res:
+        if r == curr:
+            count += 1
+        else:
+            break
+    color = "#00ffc8" if curr == "Won" else "#ff4b4b"
+    return f"{count} {curr}", color
+
+
+def basic_counters(df):
+    if df.empty:
+        return {"total_bets": 0, "net_pl": 0, "open_risk": 0, "accuracy_pct": 0, "roi_pct": 0, "turnover": 0}
+    total_bets = len(df)
+    net_pl = pd.to_numeric(df["P/L"]).sum()
+    open_risk = pd.to_numeric(df[df["Status"] == "Pending"]["Stake"]).sum()
+    turnover = pd.to_numeric(df["Stake"]).sum()
+    graded = df[df["Status"].isin(["Won", "Lost"])]
+    won = len(graded[graded["Status"] == "Won"])
+    lost = len(graded[graded["Status"] == "Lost"])
+    accuracy_pct = (won / (won + lost) * 100) if (won + lost) > 0 else 0
+    roi_pct = (net_pl / turnover * 100) if turnover > 0 else 0
+    return {"total_bets": total_bets, "net_pl": net_pl, "open_risk": open_risk, "accuracy_pct": accuracy_pct, "roi_pct": roi_pct, "turnover": turnover}
+
 
 def render_dashboard():
     df_bets = st.session_state.bets_df.copy()
-    st.title("📊 Performance Intelligence")
+    st.title("Performance Intelligence")
 
-    # ========== FILTERS ==========
+    # Filters - initialized BEFORE expander to avoid else: bug
+    df_filtered = df_bets.copy()
+
     with st.expander("🔍 Filters", expanded=False):
         col1, col2, col3 = st.columns(3)
-        bookie_f = col1.multiselect("Bookie", sorted(df_bets['Bookie'].dropna().unique()))
-        type_f = col2.multiselect("Bet Type", sorted(df_bets['Type'].dropna().unique()))
-        sport_f = col3.multiselect("Sport", sorted(df_bets['Sport'].dropna().unique()))
-
-        df_filtered = df_bets.copy()
-        if bookie_f: df_filtered = df_filtered[df_filtered['Bookie'].isin(bookie_f)]
-        if type_f: df_filtered = df_filtered[df_filtered['Type'].isin(type_f)]
-        if sport_f: df_filtered = df_filtered[df_filtered['Sport'].isin(sport_f)]
-    else:
-        df_filtered = df_bets
+        bookie_f = col1.multiselect("Bookie", sorted(df_bets["Bookie"].dropna().unique()))
+        type_f = col2.multiselect("Bet Type", sorted(df_bets["Type"].dropna().unique()))
+        sport_f = col3.multiselect("Sport", sorted(df_bets["Sport"].dropna().unique()))
+        if bookie_f:
+            df_filtered = df_filtered[df_filtered["Bookie"].isin(bookie_f)]
+        if type_f:
+            df_filtered = df_filtered[df_filtered["Type"].isin(type_f)]
+        if sport_f:
+            df_filtered = df_filtered[df_filtered["Sport"].isin(sport_f)]
 
     if df_filtered.empty:
-        st.info("👆 Add filters or log your first bet!")
+        st.info("Log your first bet to activate analytics.")
         return
 
-    # ========== PERIOD STATS (like BetDiary) ==========
+    today_s = _period_stats(df_filtered, 1)
+    week_s = _period_stats(df_filtered, 7)
+    month_s = _period_stats(df_filtered, 30)
+    total_s = basic_counters(df_filtered)
+
     st.markdown("### 📅 By Period")
-    today_stats = _period_stats(df_filtered, 1)
-    week_stats = _period_stats(df_filtered, 7)
-    month_stats = _period_stats(df_filtered, 30)
-    total_stats = basic_counters(df_filtered)
-
     r1, r2, r3, r4 = st.columns(4)
-
-    # Today
-    with r1:
-        st.metric("Today", f"{today_stats['bets']} bets")
-        st.caption(f"${today_stats['pl']:,.0f} • {today_stats['roi']:.0f}%")
-
-    # Week
-    with r2:
-        st.metric("Week", f"{week_stats['bets']} bets")
-        st.caption(f"${week_stats['pl']:,.0f} • {week_stats['roi']:.0f}%")
-
-    # Month
-    with r3:
-        st.metric("Month", f"{month_stats['bets']} bets")
-        st.caption(f"${month_stats['pl']:,.0f} • {month_stats['roi']:.0f}%")
-
-    # Total
-    with r4:
-        st.metric("Total", f"{total_stats['total_bets']} bets")
-        st.caption(f"${total_stats['net_pl']:,.0f} • {total_stats['roi_pct']:.1f}%")
+    r1.metric("Today", f"{today_s['bets']} bets", f"${today_s['pl']:,.0f}")
+    r2.metric("Week", f"{week_s['bets']} bets", f"${week_s['pl']:,.0f}")
+    r3.metric("Month", f"{month_s['bets']} bets", f"${month_s['pl']:,.0f}")
+    r4.metric("Total", f"{total_s['total_bets']} bets", f"${total_s['net_pl']:,.0f}")
 
     st.divider()
+    st.markdown("### 🎯 Key Metrics")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Net P/L", f"${total_s['net_pl']:,.2f}")
+    c2.metric("ROI", f"{total_s['roi_pct']:.1f}%")
+    c3.metric("Hit Rate", f"{total_s['accuracy_pct']:.1f}%")
 
-    # ========== CORE METRICS ==========
-    st.markdown("### 🎯 Core Metrics")
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric("Net P/L", f"${total_stats['net_pl']:,.0f}")
-
-    with col2:
-        st.metric("ROI", f"{total_stats['roi_pct']:.1f}%")
-
-    with col3:
-        st.metric("Hit Rate", f"{total_stats['accuracy_pct']:.1f}%")
-
-    with col4:
-        s_text, s_color = get_streak_stats(df_filtered)
+    s_text, s_color = get_streak_stats(df_filtered)
+    with c4:
         st.markdown(f"""
-            <div style='text-align: center; padding: 16px;
-                        background: #1a2332; border-radius: 10px; border: 1px solid #2a3444;'>
-                <div style='color: #8b9ba5; font-size: 12px; font-weight: 600;'>STREAK</div>
-                <div style='color: {s_color}; font-size: 24px; font-weight: 800;'>
-                    {s_text}
-                </div>
+            <div style='text-align:center;padding:16px;background:#1a2332;
+                        border-radius:10px;border:1px solid #2a3444;'>
+                <div style='color:#8b9ba5;font-size:12px;font-weight:600;'>STREAK</div>
+                <div style='color:{s_color};font-size:24px;font-weight:800;'>{s_text}</div>
             </div>
         """, unsafe_allow_html=True)
 
-    col5, col6, col7, col8 = st.columns(4)
-
-    with col5:
-        st.metric("Turnover", f"${total_stats['turnover']:,.0f}")
-
-    with col6:
-        avg_odds = pd.to_numeric(df_filtered['Odds']).mean()
-        st.metric("Avg Odds", f"{avg_odds:.2f}")
-
-    with col7:
-        avg_stake = pd.to_numeric(df_filtered['Stake']).mean()
-        st.metric("Avg Stake", f"${avg_stake:.0f}")
-
-    with col8:
-        open_risk = pd.to_numeric(df_filtered[df_filtered['Status']=='Pending']['Stake']).sum()
-        st.metric("Open Risk", f"${open_risk:.0f}")
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Turnover", f"${total_s['turnover']:,.2f}")
+    c6.metric("Avg Odds", f"{pd.to_numeric(df_filtered['Odds']).mean():.2f}")
+    c7.metric("Avg Stake", f"${pd.to_numeric(df_filtered['Stake']).mean():.2f}")
+    c8.metric("Open Risk", f"${total_s['open_risk']:,.2f}")
 
     st.divider()
+    st.markdown("### 📊 Breakdown")
+    ch1, ch2, ch3 = st.columns(3)
 
-    # ========== BREAKDOWN CHARTS ==========
-    st.markdown("### 📈 Breakdown")
-
-    # Profit by sport
-    col_chart1, col_chart2, col_chart3 = st.columns(3)
-
-    with col_chart1:
-        sport_pl = df_filtered.groupby('Sport')['P/L'].sum().sort_values(ascending=False).head(8)
-        fig1 = px.bar(x=sport_pl.index, y=sport_pl.values,
-                     title="P/L by Sport",
-                     color_discrete_sequence=['#00ffc8'])
-        fig1.update_layout(height=300, margin=dict(t=40, b=20, l=0, r=0), showlegend=False)
+    with ch1:
+        sport_pl = df_filtered.groupby("Sport")["P/L"].sum().sort_values(ascending=False).head(6)
+        fig1 = px.bar(x=sport_pl.index, y=sport_pl.values, title="P/L by Sport", color_discrete_sequence=["#00ffc8"])
+        fig1.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig1, use_container_width=True)
 
-    with col_chart2:
-        bookie_vol = df_filtered.groupby('Bookie')['Stake'].sum().sort_values(ascending=False).head(8)
-        fig2 = px.pie(values=bookie_vol.values, names=bookie_vol.index,
-                     title="Stake by Bookie", hole=0.4)
-        fig2.update_layout(height=300, margin=dict(t=40, b=20, l=0, r=0))
+    with ch2:
+        bookie_stake = df_filtered.groupby("Bookie")["Stake"].sum().sort_values(ascending=False).head(6)
+        fig2 = px.pie(values=bookie_stake.values, names=bookie_stake.index, title="Stake by Bookie", hole=0.4)
+        fig2.update_traces(textposition="inside", textinfo="percent+label")
+        fig2.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig2, use_container_width=True)
 
-    with col_chart3:
-        type_pl = df_filtered.groupby('Type')['P/L'].sum()
-        fig3 = px.bar(x=type_pl.index, y=type_pl.values,
-                     title="P/L by Type", color_discrete_sequence=['#ff6b6b'])
-        fig3.update_layout(height=300, margin=dict(t=40, b=20, l=0, r=0), showlegend=False)
+    with ch3:
+        type_pl = df_filtered.groupby("Type")["P/L"].sum()
+        fig3 = px.bar(x=type_pl.index, y=type_pl.values, title="P/L by Type", color_discrete_sequence=["#ff6b6b"])
+        fig3.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig3, use_container_width=True)
 
     st.divider()
-
-    # ========== GROWTH CHART ==========
-    st.markdown("### 📊 Growth")
-    df_growth = df_filtered.sort_values('Date').copy()
-    df_growth['Cumulative'] = pd.to_numeric(df_growth['P/L']).cumsum()
-
-    fig_growth = go.Figure()
-    fig_growth.add_trace(go.Scatter(
-        x=df_growth['Date'],
-        y=df_growth['Cumulative'],
-        fill='tozeroy',
-        line=dict(color='#00ffc8', width=3),
-        name='Cumulative P/L'
+    st.markdown("### 📈 Cumulative P/L")
+    df_growth = df_filtered.sort_values("Date").copy()
+    df_growth["Cumulative"] = pd.to_numeric(df_growth["P/L"]).cumsum()
+    fig_g = go.Figure(go.Scatter(
+        x=df_growth["Date"], y=df_growth["Cumulative"],
+        fill="tozeroy", line=dict(color="#00ffc8", width=3)
     ))
-    fig_growth.update_layout(
-        template='plotly_dark',
-        title="Profit Evolution",
-        height=400,
-        margin=dict(l=20, r=20, t=50, b=20),
-        showlegend=False
-    )
-    st.plotly_chart(fig_growth, use_container_width=True)
-
-    # ========== TABLE SUMMARY ==========
-    st.markdown("### 📋 Summary Table")
-    summary_df = pd.DataFrame({
-        'Period': ['Today', 'Week', 'Month', 'Total'],
-        'Bets': [today_stats['bets'], week_stats['bets'], month_stats['bets'], total_stats['total_bets']],
-        'Turnover': [f"${today_stats['turnover']:,.0f}", f"${week_stats['turnover']:,.0f}",
-                    f"${month_stats['turnover']:,.0f}", f"${total_stats['turnover']:,.0f}"],
-        'P/L': [f"${today_stats['pl']:,.0f}", f"${week_stats['pl']:,.0f}",
-               f"${month_stats['pl']:,.0f}", f"${total_stats['net_pl']:,.0f}"],
-        'ROI': [f"{today_stats['roi']:.1f}%", f"{week_stats['roi']:.1f}%",
-               f"{month_stats['roi']:.1f}%", f"{total_stats['roi_pct']:.1f}%"],
-        'Hit Rate': [f"{today_stats['hit_rate']:.1f}%", f"{week_stats['hit_rate']:.1f}%",
-                    f"{month_stats['hit_rate']:.1f}%", f"{total_stats['accuracy_pct']:.1f}%"]
-    })
-    st.dataframe(summary_df, use_container_width=True)
+    fig_g.update_layout(template="plotly_dark", height=380, margin=dict(t=20, b=20, l=20, r=20))
+    st.plotly_chart(fig_g, use_container_width=True)
