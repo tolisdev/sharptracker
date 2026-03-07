@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
+import json
 
 
 def _period_stats(df, days_back):
@@ -50,14 +51,42 @@ def basic_counters(df):
     lost = len(graded[graded["Status"] == "Lost"])
     accuracy_pct = (won / (won + lost) * 100) if (won + lost) > 0 else 0
     roi_pct = (net_pl / turnover * 100) if turnover > 0 else 0
-    return {"total_bets": total_bets, "net_pl": net_pl, "open_risk": open_risk, "accuracy_pct": accuracy_pct, "roi_pct": roi_pct, "turnover": turnover}
+    return {"total_bets": total_bets, "net_pl": net_pl, "open_risk": open_risk,
+            "accuracy_pct": accuracy_pct, "roi_pct": roi_pct, "turnover": turnover}
+
+
+def _explode_for_sport_analysis(df):
+    """
+    Expand parlay legs into individual rows for sport/league chart analysis.
+    Each leg gets proportional P/L (total P/L / number of legs).
+    Regular single bets pass through unchanged.
+    """
+    rows = []
+    for _, row in df.iterrows():
+        if row.get("Sport") == "Parlay" and row.get("Legs"):
+            try:
+                legs = json.loads(row["Legs"])
+                if legs:
+                    leg_pl = float(row["P/L"]) / len(legs)
+                    leg_stake = float(row["Stake"]) / len(legs)
+                    for leg in legs:
+                        r = row.copy()
+                        r["Sport"] = leg.get("sport", "Parlay")
+                        r["League"] = leg.get("league", "Multi")
+                        r["P/L"] = leg_pl
+                        r["Stake"] = leg_stake
+                        rows.append(r)
+                    continue
+            except Exception:
+                pass
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def render_dashboard():
     df_bets = st.session_state.bets_df.copy()
     st.title("Performance Intelligence")
 
-    # Filters - initialized BEFORE expander to avoid else: bug
     df_filtered = df_bets.copy()
 
     with st.expander("🔍 Filters", expanded=False):
@@ -76,11 +105,15 @@ def render_dashboard():
         st.info("Log your first bet to activate analytics.")
         return
 
+    # Exploded df for sport/league charts (parlays split into legs)
+    df_exploded = _explode_for_sport_analysis(df_filtered)
+
     today_s = _period_stats(df_filtered, 1)
     week_s = _period_stats(df_filtered, 7)
     month_s = _period_stats(df_filtered, 30)
     total_s = basic_counters(df_filtered)
 
+    # Period row
     st.markdown("### 📅 By Period")
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("Today", f"{today_s['bets']} bets", f"${today_s['pl']:,.0f}")
@@ -89,6 +122,8 @@ def render_dashboard():
     r4.metric("Total", f"{total_s['total_bets']} bets", f"${total_s['net_pl']:,.0f}")
 
     st.divider()
+
+    # Core metrics
     st.markdown("### 🎯 Key Metrics")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Net P/L", f"${total_s['net_pl']:,.2f}")
@@ -112,29 +147,47 @@ def render_dashboard():
     c8.metric("Open Risk", f"${total_s['open_risk']:,.2f}")
 
     st.divider()
+
+    # Charts - uses exploded df so parlay legs count per sport
     st.markdown("### 📊 Breakdown")
     ch1, ch2, ch3 = st.columns(3)
 
     with ch1:
-        sport_pl = df_filtered.groupby("Sport")["P/L"].sum().sort_values(ascending=False).head(6)
-        fig1 = px.bar(x=sport_pl.index, y=sport_pl.values, title="P/L by Sport", color_discrete_sequence=["#00ffc8"])
+        sport_pl = df_exploded.groupby("Sport")["P/L"].sum().sort_values(ascending=False).head(8)
+        fig1 = px.bar(x=sport_pl.index, y=sport_pl.values,
+                      title="P/L by Sport (incl. parlay legs)",
+                      color_discrete_sequence=["#00ffc8"])
         fig1.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig1, use_container_width=True)
 
     with ch2:
         bookie_stake = df_filtered.groupby("Bookie")["Stake"].sum().sort_values(ascending=False).head(6)
-        fig2 = px.pie(values=bookie_stake.values, names=bookie_stake.index, title="Stake by Bookie", hole=0.4)
+        fig2 = px.pie(values=bookie_stake.values, names=bookie_stake.index,
+                      title="Stake by Bookie", hole=0.4)
         fig2.update_traces(textposition="inside", textinfo="percent+label")
         fig2.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig2, use_container_width=True)
 
     with ch3:
         type_pl = df_filtered.groupby("Type")["P/L"].sum()
-        fig3 = px.bar(x=type_pl.index, y=type_pl.values, title="P/L by Type", color_discrete_sequence=["#ff6b6b"])
+        fig3 = px.bar(x=type_pl.index, y=type_pl.values,
+                      title="P/L by Type",
+                      color_discrete_sequence=["#ff6b6b"])
         fig3.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
         st.plotly_chart(fig3, use_container_width=True)
 
+    # League breakdown (exploded)
+    league_pl = df_exploded.groupby("League")["P/L"].sum().sort_values(ascending=False).head(8)
+    if len(league_pl) > 0:
+        fig_l = px.bar(x=league_pl.index, y=league_pl.values,
+                       title="P/L by League (incl. parlay legs)",
+                       color_discrete_sequence=["#00d4ff"])
+        fig_l.update_layout(height=280, margin=dict(t=30, b=10, l=10, r=10))
+        st.plotly_chart(fig_l, use_container_width=True)
+
     st.divider()
+
+    # Growth chart
     st.markdown("### 📈 Cumulative P/L")
     df_growth = df_filtered.sort_values("Date").copy()
     df_growth["Cumulative"] = pd.to_numeric(df_growth["P/L"]).cumsum()
