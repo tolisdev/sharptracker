@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 
+from data_layer import clear_user_data
+
 
 def render_settings():
     df_meta = st.session_state.meta_df
@@ -50,3 +52,18 @@ def render_settings():
         ).transpose()
         st.session_state.unsaved_count += 1
         st.success("Configuration updated locally. Push to cloud to persist.")
+
+    st.divider()
+    st.subheader("Danger Zone")
+    st.warning(
+        "This permanently deletes all wagers and bankroll activity for your account. "
+        "Your settings lists will be kept."
+    )
+    confirm_delete = st.checkbox(
+        "I understand this will erase all logged user data except settings."
+    )
+    if st.button(
+        "Delete All User Data (Keep Settings)",
+        disabled=not confirm_delete,
+    ):
+        clear_user_data()
