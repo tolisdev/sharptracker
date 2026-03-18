@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from data_layer import clear_user_data
+from data.data_layer import clear_user_data
 
 
 def render_settings():

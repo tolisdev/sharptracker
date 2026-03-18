@@ -1,13 +1,13 @@
 import streamlit as st
 
 from auth import ensure_auth, logout_button
-from data_layer import init_user_data, push_to_cloud
+from data.analytics import basic_counters  # we'll use this
+from data.data_layer import init_user_data, push_to_cloud
 from styling import inject_global_css
-from views_dashboard import render_dashboard
-from views_wagers import render_wagers
-from views_bankroll import render_bankroll
-from views_settings import render_settings
-from analytics import basic_counters  # we'll use this
+from views.bankroll import render_bankroll
+from views.dashboard import render_dashboard
+from views.settings import render_settings
+from views.wagers import render_wagers
 
 st.set_page_config(page_title="SharpTracker Elite", layout="wide", page_icon="🎯")
 inject_global_css()
